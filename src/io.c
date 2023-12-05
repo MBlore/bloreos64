@@ -16,7 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include <stdint.h>
-#include "io.h"
+#include <io.h>
 
 /* Sends a 8-bit value to a I/O location */
 inline void outb(uint16_t port, uint8_t val)

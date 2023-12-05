@@ -19,9 +19,9 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#include "limine.h"
-#include "serial.h"
-#include "str.h"
+#include <limine.h>
+#include <serial.h>
+#include <str.h>
 
 // Set the base revision to 1, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
