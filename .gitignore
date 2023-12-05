@@ -1,0 +1,9 @@
+logs/
+limine/
+iso_root/
+bin/
+obj/
+.vscode
+ovmf/
+image.hdd
+image.iso
