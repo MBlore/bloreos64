@@ -37,6 +37,10 @@ struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
     .revision = 0};
 
+struct limine_memmap_request memmap_request = {
+    .id = LIMINE_MEMMAP_REQUEST,
+    .revision = 0};
+
 // GCC and Clang reserve the right to generate calls to the following
 // 4 functions even if they are not directly called.
 // Implement them as the C specification mandates.
@@ -117,14 +121,27 @@ static void hcf(void)
     }
 }
 
+static inline void put_pixel(struct limine_framebuffer *framebuffer, int x, int y, uint32_t color)
+{
+    uint32_t *fb_ptr = framebuffer->address;
+    int index = (y * (framebuffer->pitch / 4)) + x;
+    fb_ptr[index] = color;
+}
 
+size_t get_total_mem(struct limine_memmap_response *memmap)
+{
+    size_t total_mem = 0;
 
+    for (size_t i = 0; i < memmap->entry_count; i++) {
+        if (memmap->entries[i]->type == LIMINE_MEMMAP_USABLE) {
+            total_mem += memmap->entries[i]->length;
+        }
+    }
 
+    return total_mem;
+}
 
-// The following will be our kernel's entry point.
-// If renaming _start() to something else, make sure to change the
-// linker script accordingly.
-void _start(void)
+void kernel_main(void)
 {
     // Ensure the bootloader actually understands our base revision (see spec).
     if (LIMINE_BASE_REVISION_SUPPORTED == false)
@@ -133,8 +150,11 @@ void _start(void)
     }
 
     // Ensure we got a framebuffer.
-    if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1)
-    {
+    if (framebuffer_request.response == NULL || framebuffer_request.response->framebuffer_count < 1) {
+        hcf();
+    }
+
+    if (memmap_request.response == NULL) {
         hcf();
     }
 
@@ -153,27 +173,28 @@ void _start(void)
 
     int result = init_serial(PORT_COM1);
 
-    if (result == 0)
-    {
+    if (result == 0) {
         // Success
-        for (size_t i = 0; i < framebuffer->height; i++)
-        {
-            fb_ptr[i * (framebuffer->pitch / 4) + (framebuffer->width / framebuffer->height * i)] = 0x00ff00;
+        for (size_t x = 0; x < framebuffer->width; x++) {
+            for (size_t y = 0; y < framebuffer->height; y++) {
+                put_pixel(framebuffer, x, y, 0x00ff00);
+            }
         }
     }
-    else
-    {
+    else {
         // Failed :(
-        for (size_t i = 0; i < framebuffer->height; i++)
-        {
+        for (size_t i = 0; i < framebuffer->height; i++) {
             fb_ptr[i * (framebuffer->pitch / 4) + (framebuffer->width / framebuffer->height * i)] = 0xff0000;
         }
     }
 
-    write_serial_str(PORT_COM1, "v1.0\n");
+    write_serial_str(PORT_COM1, "BloreOS Alpha\n");
+
     write_serial_strf(PORT_COM1, "Width: %d, Height: %d\n", framebuffer->width, framebuffer->height);
 
+    size_t max = get_total_mem(memmap_request.response);
 
-    // We're done, just hang...
+    write_serial_strf(PORT_COM1, "Total Memory: %lu\n", max);
+
     hcf();
 }
