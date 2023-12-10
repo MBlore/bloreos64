@@ -71,4 +71,53 @@ static inline uint32_t inl(uint16_t port)
     return ret;
 }
 
+static inline uint64_t get_rax()
+{
+    uint64_t val;
+    asm volatile ("movq %%rax, %0" : "=r"(val) :: "memory");
+    return val;
+}
+
+static inline void set_rax(uint64_t val)
+{
+    asm volatile ("movq %0, %%rax" :: "r"(val) : "memory");
+}
+
+/*
+    Control registers, only available in ring-0.
+    CR0 - System control flags
+        [31] - Paging enabled
+        [30] - Cache Disable
+    CR1 - Reserved
+    CR2 - Page fault address
+    CR3 - Paging hierarchy address
+    CR4 - Extension flags
+    CR8 - Task Priority Register (TPR) priority threshold 
+*/
+static inline uint64_t get_cr0()
+{
+    uint64_t val;
+    asm volatile ("movq %%cr0, %0" : "=r"(val) :: "memory");
+    return val;
+}
+
+static inline int is_paging_enabled()
+{
+    // Check for bit 31
+    uint64_t bitmask = 0x80000000;
+
+    if (get_cr0() & bitmask) {
+        return 1;
+    }
+
+    return 0;
+}
+
+static inline void set_cr0(uint64_t val)
+{
+    asm volatile ("movq %0, %%cr0" :: "r"(val) : "memory");
+}
+
+
+
 #endif

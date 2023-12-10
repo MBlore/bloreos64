@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <serial.h>
 
 /* Reverses the string in str */
 void reverse(char str[], size_t length)
@@ -253,4 +254,33 @@ int snprintf(char buffer[], size_t size, const char format[], ...)
     va_end(args);
 
     return r;
+}
+
+size_t strlen(const char *str)
+{
+    size_t len = 0;
+
+    for (int i = 0; i < 65535; i++) {
+        if (str[i] == '\0') {
+            return len;
+        }
+        len++;
+    }
+
+    return -1;
+}
+
+/*
+    Kernel log - currently writes to serial COM1.
+*/
+void kprintf(const char format[], ...)
+{
+    char buffer[256];
+
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+    write_serial_str(PORT_COM1, buffer);
 }

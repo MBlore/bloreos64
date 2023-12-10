@@ -18,7 +18,7 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <serial.h>
-#include <io.h>
+#include <cpu.h>
 #include <str.h>
 
 int init_serial(uint16_t port)

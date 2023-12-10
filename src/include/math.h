@@ -15,22 +15,11 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_STR_H
-#define _BLOREOS_STR_H
 
-#include <stddef.h>
-#include <stdarg.h>
+/* Divide and round up e.g. 5 / 4 = 1.25 = 2 */
+#define DIV_ROUNDUP(VALUE, DIV) ({ \
+    __auto_type DIV_ROUNDUP_value = VALUE; \
+    __auto_type DIV_ROUNDUP_div = DIV; \
+    (DIV_ROUNDUP_value + (DIV_ROUNDUP_div - 1)) / DIV_ROUNDUP_div; \
+})
 
-void reverse(char str[], size_t length);
-
-size_t itoa(int num, char str[], size_t base);
-size_t ltoa(int64_t num, char str[], size_t base);
-size_t ultoa(uint64_t num, char str[], size_t base);
-
-size_t strlen(const char *str);
-
-int snprintf(char buffer[], size_t size, const char format[], ...);
-int vsnprintf(char buffer[], size_t size, const char format[], va_list args);
-void kprintf(const char format[], ...);
-
-#endif

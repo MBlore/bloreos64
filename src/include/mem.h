@@ -15,22 +15,28 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_STR_H
-#define _BLOREOS_STR_H
+#ifndef _BLOREOS_MEM_H
+#define _BLOREOS_MEM_H
 
+#include <stdint.h>
 #include <stddef.h>
-#include <stdarg.h>
+#include <limine.h>
 
-void reverse(char str[], size_t length);
+#define PAGE_SIZE 4096
 
-size_t itoa(int num, char str[], size_t base);
-size_t ltoa(int64_t num, char str[], size_t base);
-size_t ultoa(uint64_t num, char str[], size_t base);
+struct idt_entry_64
+{
+    uint16_t offset_1;          // Handler location bits 0..15
+    uint16_t selector;          // Codesegment descriptor selection
+    uint8_t ist;                // IST offset in bits 0..2
+    uint8_t type_attributes;    // Segment selector flags
+    uint16_t offset_2;          // Handler location bits 16..31
+    uint32_t offset_3;          // Handler location bits 32..63
+    uint32_t reserved; 
+} __attribute__((packed));
 
-size_t strlen(const char *str);
+extern volatile struct limine_memmap_response *memmap;
 
-int snprintf(char buffer[], size_t size, const char format[], ...);
-int vsnprintf(char buffer[], size_t size, const char format[], va_list args);
-void kprintf(const char format[], ...);
+size_t get_total_mem();
 
 #endif
