@@ -15,8 +15,8 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_IO_H
-#define _BLOREOS_IO_H
+#ifndef _BLOREOS_CPU_H
+#define _BLOREOS_CPU_H
 
 #include <stdint.h>
 
@@ -117,7 +117,5 @@ static inline void set_cr0(uint64_t val)
 {
     asm volatile ("movq %0, %%cr0" :: "r"(val) : "memory");
 }
-
-
 
 #endif

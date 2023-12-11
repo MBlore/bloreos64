@@ -22,12 +22,25 @@
 #include <string.h>
 #include <limine.h>
 #include <str.h>
+#include <atomic.h>
 
-volatile struct limine_memmap_response *memmap;
+spinlock_t lock = {0};
+
+uint64_t max_pages_available;
+uint64_t total_memory_bytes;
 
 volatile struct limine_memmap_request memmap_request = {
     .id = LIMINE_MEMMAP_REQUEST,
     .revision = 0};
+
+volatile struct limine_hhdm_request hhdm_request = {
+    .id = LIMINE_HHDM_REQUEST,
+    .revision = 0
+};
+
+volatile struct limine_memmap_response *memmap;
+volatile struct limine_hhdm_response *hhdm;
+
 
 // GCC and Clang reserve the right to generate calls to the following
 // 4 functions even if they are not directly called.
@@ -98,38 +111,33 @@ int memcmp(const void *s1, const void *s2, size_t n)
 }
 
 /*
-void create_idt(void *mem) {
-	struct idt_entry e = {
-		.base_lo = 0x9000,
-		.sel = 0x8,
-		.flags = 0x8e,
-	};
-
-	for(int i = 0; i < 256; i++) {
-		memcpy(mem + i * 16, &e, 16);
-	}
-}*/
-
-/* Returns the total amount of usable physical memory in the system */
-size_t get_total_mem()
+    Initialize the memory managers
+*/
+void kmem_init()
 {
-    struct limine_memmap_response *memmap = memmap_request.response;
-    size_t total_mem = 0;
-
+    memmap = memmap_request.response;
+    hhdm = hhdm_request.response;
+   
     for (size_t i = 0; i < memmap->entry_count; i++) {
         if (memmap->entries[i]->type == LIMINE_MEMMAP_USABLE) {
             kprintf("Memory Map Entry %d Base: %lu\n", i, memmap->entries[i]->base);
             kprintf("Memory Map Entry %d Length: %lu\n", i, memmap->entries[i]->length);
-            total_mem += memmap->entries[i]->length;
+            total_memory_bytes += memmap->entries[i]->length;
+
+            // In this entry, how many pages are there?
+            max_pages_available += memmap->entries[i]->length / PAGE_SIZE;
         }
     }
 
-    return total_mem;
+    kprintf("Total Memory Mib: %lu\n", total_memory_bytes / 1024 / 1024);
+    kprintf("Total Memory Mib: %lu\n", total_memory_bytes / 1024 / 1024);
 }
 
-void kmem_init()
+void pmm_alloc()
 {
-    memmap = memmap_request.response;
-    
-    
+    spinlock_lock(&lock);
+
+    // Grab a page here...
+
+    spinlock_unlock(&lock);
 }

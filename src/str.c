@@ -108,6 +108,37 @@ size_t ultoa(uint64_t num, char str[], size_t base)
     return i;
 }
 
+/*
+    Converts a uint64_t (unsigned long) value to a null-terminated string storing the result in the str parameter
+    When using base > 10, the chars are upper-case.
+*/
+size_t __ultoua(uint64_t num, char str[], size_t base)
+{
+    size_t i = 0;
+
+    // Handle 0 explicitly
+    if (num == 0)
+    {
+        str[i++] = '0';
+    }
+
+    // Process individual digits
+    while (num != 0)
+    {
+        size_t rem = num % base;
+        str[i++] = (rem > 9) ? (rem - 10) + 'A' : rem + '0';
+        num = num / base;
+    }
+
+    // Null-terminate the string
+    str[i] = '\0';
+
+    // Reverse the string
+    reverse(str, i);
+
+    return i;
+}
+
 /* Converts an int64_t value to a null-terminated string storing the result in the str parameter */
 size_t ltoa(int64_t num, char str[], size_t base)
 {
@@ -193,7 +224,16 @@ size_t ftoa(float f, char str[], int precision)
 }
 */
 
-/* Formats a series of arguments in specific formats and stores the string equivalents in buffer */
+/*
+    Formats a series of arguments in specific formats and stores the string equivalents in buffer
+
+    %d - int
+    %x - uint64 as hexadecimal
+    %X - uint64 as hexadecimal upper-case
+    %s - string
+    %lu - uint64
+    %ld - int64
+*/
 int vsnprintf(char buffer[], size_t size, const char format[], va_list args)
 {
     size_t bufferIndex = 0;
@@ -207,6 +247,12 @@ int vsnprintf(char buffer[], size_t size, const char format[], va_list args)
             if (format[i] == 'd') {
                 int value = va_arg(args, int);
                 bufferIndex += itoa(value, buffer + bufferIndex, 10);
+            } else if (format[i] == 'x') {
+                uint64_t value = va_arg(args, uint64_t);
+                bufferIndex += ultoa(value, buffer + bufferIndex, 16);
+            } else if (format[i] == 'X') {
+                uint64_t value = va_arg(args, uint64_t);
+                bufferIndex += __ultoua(value, buffer + bufferIndex, 16);
             } else if (format[i] == 's') {
                 char *str = va_arg(args, char*);
                 while (*str != '\0') {

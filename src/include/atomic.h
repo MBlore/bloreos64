@@ -15,15 +15,25 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+#ifndef _BLOREOS_ATOMIC_H
+#define _BLOREOS_ATOMIC_H
 
-#ifndef _BLOREOS_MATH_H
-#define _BLOREOS_MATH_H
+#include <stdint.h>
 
-/* Divide and round up e.g. 5 / 4 = 1.25 = 2 */
-#define DIV_ROUNDUP(val, div) (((val) + (div) - 1) / (div))
+typedef struct {
+    uint8_t lock;
+} spinlock_t;
 
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
+static void spinlock_lock(spinlock_t *pLock)
+{
+    while (__sync_lock_test_and_set(&pLock->lock, 1)) {
+        // Idle until locked.
+    }
+}
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
+static void spinlock_unlock(spinlock_t *pLock)
+{
+    __sync_lock_release(&pLock->lock);
+}
 
 #endif

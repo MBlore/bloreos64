@@ -37,6 +37,10 @@ struct idt_entry_64
 
 extern volatile struct limine_memmap_response *memmap;
 
-size_t get_total_mem();
+extern uint64_t total_memory_bytes;
+extern uint64_t max_pages_available;
+
+void kmem_init();
+void pmm_alloc();
 
 #endif
