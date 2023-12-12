@@ -97,21 +97,13 @@ void kernel_main(void)
     kprintf("BloreOS Alpha\n");
     kprintf("Width: %d, Height: %d\n", framebuffer->width, framebuffer->height);
 
-    kmem_init();
-
     if (is_paging_enabled()) {
-        kprintf("Paging is enabled.\n");
+        kprintf("Paging enabled.\n");
     } else {
-        kprintf("Paging is disabled.\n");
+        kprintf("Paging disabled.\n");
     }
 
-    kprintf("Hex: 0x%X\n", 5);
-    kprintf("Hex: 0x%X\n", 10);
-    kprintf("Hex: 0x%X\n", 15);
-    kprintf("Hex: 0x%X\n", 150);
-    kprintf("Hex: 0x%X\n", 1500);
-    kprintf("Hex: 0x%X\n", 65535);
-
+    kmem_init();
     pmm_alloc();
 
     hcf();

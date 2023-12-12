@@ -26,4 +26,7 @@
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
+/* Aligns val to the next highest multiple of align, e.g. val 10 and align 8 results in 16 */
+#define ALIGN_UP(val, align) (((val) + (align) - 1) / (align)) * (align)
+
 #endif
