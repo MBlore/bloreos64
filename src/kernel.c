@@ -104,7 +104,11 @@ void kernel_main(void)
     }
 
     kmem_init();
-    pmm_alloc();
+    void* ptr = kalloc(10);
+    void* ptr2 = kalloc(5000);
+
+    kprintf("Address 1: 0x%X\n", ptr);
+    kprintf("Address 2: 0x%X\n", ptr2);
 
     hcf();
 }

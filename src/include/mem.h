@@ -41,6 +41,6 @@ extern uint64_t total_memory_bytes;
 extern uint64_t max_pages_available;
 
 void kmem_init();
-void pmm_alloc();
+void* kalloc(size_t numBytes);
 
 #endif
