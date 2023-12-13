@@ -39,6 +39,7 @@ extern volatile struct limine_memmap_response *memmap;
 
 extern uint64_t total_memory_bytes;
 extern uint64_t max_pages_available;
+extern uint64_t num_pages_available;
 
 void kmem_init();
 void* kalloc(size_t numBytes);

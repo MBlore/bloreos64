@@ -104,8 +104,13 @@ void kernel_main(void)
     }
 
     kmem_init();
+    kprintf("PMM Available Pages: %lu\n", num_pages_available);
+    
     void* ptr = kalloc(10);
+    kprintf("PMM Available Pages: %lu\n", num_pages_available);
+
     void* ptr2 = kalloc(5000);
+    kprintf("PMM Available Pages: %lu\n", num_pages_available);
 
     kprintf("Address 1: 0x%X\n", ptr);
     kprintf("Address 2: 0x%X\n", ptr2);

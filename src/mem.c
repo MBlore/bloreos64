@@ -76,6 +76,8 @@ uint64_t higher_half_offset = 0;
 */
 uint64_t allocation_cursor = 0;
 
+uint64_t num_pages_available = 0;
+
 enum AllocState {
     /* Looking for a free spot */
     SEEKING,
@@ -172,6 +174,7 @@ void __get_free_pages()
         // Marks all the pages as free for the size of this memory map entry.
         for (uint64_t i = start_bit; i < start_bit + pages_free; i++) {
             bitmap_off(page_bitmap, i);
+            num_pages_available++;
         }
     }
 }
@@ -329,6 +332,7 @@ void* kalloc(size_t numBytes)
 
             // Reserve it in the map and return the location.
             __reserve_pages(start_alloc_page, allocated_pages);
+            num_pages_available -= allocated_pages;
             spinlock_unlock(&lock);
             kprintf("PMM Allocated: %d page(s)\n", allocated_pages);
             return __get_addr_from_page(start_alloc_page);
