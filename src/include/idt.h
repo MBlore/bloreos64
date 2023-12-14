@@ -15,22 +15,23 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_MEM_H
-#define _BLOREOS_MEM_H
+#ifndef _BLOREOS_IDT_H
+#define _BLOREOS_IDT_H
 
 #include <stdint.h>
 #include <stddef.h>
-#include <limine.h>
 
-#define PAGE_SIZE 4096
+struct idt_entry_64
+{
+    uint16_t offset_1;          // Handler location bits 0..15
+    uint16_t selector;          // Codesegment descriptor selection
+    uint8_t ist;                // IST offset in bits 0..2
+    uint8_t type_attr;          // Segment selector flags
+    uint16_t offset_2;          // Handler location bits 16..31
+    uint32_t offset_3;          // Handler location bits 32..63
+    uint32_t reserved; 
+} __attribute__((packed));
 
-extern volatile struct limine_memmap_response *memmap;
 
-extern uint64_t total_memory_bytes;
-extern uint64_t max_pages_available;
-extern uint64_t num_pages_available;
-
-void kmem_init();
-void* kalloc(size_t numBytes);
 
 #endif

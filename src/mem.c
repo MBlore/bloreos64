@@ -78,14 +78,6 @@ uint64_t allocation_cursor = 0;
 
 uint64_t num_pages_available = 0;
 
-enum AllocState {
-    /* Looking for a free spot */
-    SEEKING,
-
-    /* Found a spot, trying to fit */
-    ALLOCATING,
-};
-
 // GCC and Clang reserve the right to generate calls to the following
 // 4 functions even if they are not directly called.
 // Implement them as the C specification mandates.
@@ -295,27 +287,28 @@ void* kalloc(size_t numBytes)
 {
     spinlock_lock(&lock);
 
-    enum AllocState state = SEEKING;
-
     uint64_t pages_to_alloc = DIV_ROUNDUP(numBytes, PAGE_SIZE);
     uint64_t start_alloc_page = 0;
     uint64_t allocated_pages = 0;
     bool looped = false;
+    bool allocating = false;
+    bool page_state = false;
 
     // Try and allocate pages starting from the cursor.
     while(true) {
-        if (state == SEEKING) {
-            if (!bitmap_test(page_bitmap, allocation_cursor)) {
-                // SEEKING -> FREE
+        page_state = bitmap_test(page_bitmap, allocation_cursor);
+
+        if (!allocating) {
+            if (!page_state) {
                 // Found a memory slot, lets start trying to allocate from here.
                 start_alloc_page = allocation_cursor;
-                state = ALLOCATING;
+                allocating = true;
                 allocated_pages = 1;
             }
-        } else if (state == ALLOCATING) {
-            if (bitmap_test(page_bitmap, allocation_cursor)) {
+        } else {
+            if (page_state) {
                 // This page is taken, back to seeking.
-                state = SEEKING;
+                allocating = false;
             } else {
                 // Free page.
                 allocated_pages++;
@@ -353,11 +346,14 @@ void* kalloc(size_t numBytes)
             // Start looking from the start and back to seeking
             // as we break the contiguous allocation.
             looped = true;
-            state = SEEKING;
+            allocating = false;
         }
     }
 
     // Failed to allocate getting this far.
     spinlock_unlock(&lock);
+
+    kprintf("PMM Allocation failed.\n");
+
     return NULL;
 }

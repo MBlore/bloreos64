@@ -105,7 +105,7 @@ void kernel_main(void)
 
     kmem_init();
     kprintf("PMM Available Pages: %lu\n", num_pages_available);
-    
+
     void* ptr = kalloc(10);
     kprintf("PMM Available Pages: %lu\n", num_pages_available);
 
