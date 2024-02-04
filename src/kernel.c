@@ -24,6 +24,7 @@
 #include <str.h>
 #include <cpu.h>
 #include <mem.h>
+#include <gdt.h>
 
 // Set the base revision to 1, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -43,8 +44,7 @@ struct limine_framebuffer_request framebuffer_request = {
 static void hcf(void)
 {
     asm("cli");
-    for (;;)
-    {
+    for (;;) {
         asm("hlt");
     }
 }
@@ -59,8 +59,7 @@ static inline void put_pixel(struct limine_framebuffer *framebuffer, int x, int 
 void kernel_main(void)
 {
     // Ensure the bootloader actually understands our base revision (see spec).
-    if (LIMINE_BASE_REVISION_SUPPORTED == false)
-    {
+    if (LIMINE_BASE_REVISION_SUPPORTED == false) {
         hcf();
     }
 
@@ -114,6 +113,9 @@ void kernel_main(void)
 
     kprintf("Address 1: 0x%X\n", ptr);
     kprintf("Address 2: 0x%X\n", ptr2);
+
+    init_gdt();
+    kprintf("GDT initialized.\n");
 
     hcf();
 }

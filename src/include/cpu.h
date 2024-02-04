@@ -118,4 +118,9 @@ static inline void set_cr0(uint64_t val)
     asm volatile ("movq %0, %%cr0" :: "r"(val) : "memory");
 }
 
+static inline void lgdt(void* gdt_ptr)
+{
+    asm volatile ("lgdt (%0)" :: "r"(gdt_ptr) : "memory");
+}
+
 #endif
