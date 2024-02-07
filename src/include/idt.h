@@ -21,17 +21,31 @@
 #include <stdint.h>
 #include <stddef.h>
 
-struct idt_entry_64
+struct idt_entry
 {
-    uint16_t offset_1;          // Handler location bits 0..15
+    uint16_t base_low;          // Handler location bits 0..15
     uint16_t selector;          // Codesegment descriptor selection
     uint8_t ist;                // IST offset in bits 0..2
-    uint8_t type_attr;          // Segment selector flags
-    uint16_t offset_2;          // Handler location bits 16..31
-    uint32_t offset_3;          // Handler location bits 32..63
+    uint8_t flags;              // Segment selector flags
+    uint16_t base_mid;          // Handler location bits 16..31
+    uint32_t base_high;         // Handler location bits 32..63
     uint32_t reserved; 
 } __attribute__((packed));
 
+struct idt_ptr
+{
+    uint16_t limit;
+    uint64_t base;
+} __attribute__((packed));
 
+struct idt_frame {
+    uint64_t rip;
+    uint64_t cs;
+    uint64_t flags;
+    uint64_t rsp;
+    uint64_t ss;
+};
+
+void init_idt();
 
 #endif

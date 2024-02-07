@@ -25,6 +25,7 @@
 #include <cpu.h>
 #include <mem.h>
 #include <gdt.h>
+#include <idt.h>
 
 // Set the base revision to 1, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -62,6 +63,12 @@ void kernel_main(void)
     if (LIMINE_BASE_REVISION_SUPPORTED == false) {
         hcf();
     }
+
+    disable_interrupts();
+    init_gdt();
+    init_idt();
+    enable_interrupts();
+    kprintf("GDT/IDT initialized.\n");
 
     // Fetch the first framebuffer.
     struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
@@ -114,8 +121,16 @@ void kernel_main(void)
     kprintf("Address 1: 0x%X\n", ptr);
     kprintf("Address 2: 0x%X\n", ptr2);
 
-    init_gdt();
-    kprintf("GDT initialized.\n");
+    kprintf("Making a divide by 0 problem...\n");
+
+    //int volatile *xptr = (int *)0x1;
+    //int volatile value = *xptr;
+
+    __builtin_trap();
+
+    //kprintf("Result: %d\n", value);
+
+    kprintf("Finished.\n");
 
     hcf();
 }

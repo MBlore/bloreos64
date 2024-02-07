@@ -20,6 +20,7 @@
 */
 #include <gdt.h>
 #include <cpu.h>
+#include <str.h>
 
 struct gdt_entry gdt[GDT_ENTRIES];
 struct gdt_ptr gdp;
@@ -60,4 +61,5 @@ void init_gdt()
     set_gdt_entry(2, 0, 0xFFFFF, 0x92, 0x00);
 
     lgdt((uint64_t*)&gdp);
+    kprintf("Loading GDT at: %X", &gdp);
 }

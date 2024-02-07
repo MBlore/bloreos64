@@ -19,36 +19,52 @@
     Everything to manage the IDT.
 */
 #include <idt.h>
+#include <cpu.h>
+#include <str.h>
 
 #define KERNEL_CODE_SEGMENT_OFFSET 0x08 // TODO: Check this
 
 #define INTERRUPT_GATE 0xE;
 #define TRAP_GATE 0xF;
 
-struct idt_entry_64 idt[256];
-
-struct idt_ptr {
-    uint64_t limit;
-    uint64_t base;
-} __attribute__((packed));
-
+struct idt_entry idt[256];
 struct idt_ptr idtp;
 
-void idt_load()
+void _idt_load()
 {
-    idtp.limit = sizeof(idt) - 1;;
-    idtp.base = (uint64_t)idt;
-    asm volatile("lidt %0" : : "m"(idtp) : "memory");
+    idtp.limit = sizeof(idt) - 1;
+    idtp.base = (uint64_t)&idt;
+    lidt(&idtp);
 }
 
 /* Registers a handler at the specified IDT index */
-void idt_set_gate(int n, uint64_t handler)
+void _idt_set_gate(int vector, void *handler, uint8_t flags)
 {
-    idt[n].offset_1 = handler & 0xFFFF;
-    idt[n].offset_2 = (handler >> 16) & 0xFFFF;
-    idt[n].offset_3 = (handler >> 32) & 0xFFFFFFFF;
-    idt[n].selector = KERNEL_CODE_SEGMENT_OFFSET;
-    idt[n].type_attr = INTERRUPT_GATE;
-    idt[n].ist = 0;
-    idt[n].reserved = 0;
+    uint64_t ihandler = (uint64_t)handler;
+
+    idt[vector].base_low = (uint16_t)ihandler;
+    idt[vector].base_mid = (uint16_t)(ihandler >> 16),
+    idt[vector].base_high = (uint32_t)(ihandler >> 32),
+    idt[vector].selector = 0x28;
+    idt[vector].flags = flags;
+    idt[vector].ist = 0;
+    idt[vector].reserved = 0;
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+void _handle_interrupt()
+{
+    // TODO: We're not getting here :(.
+    kprintf("**EXCEPTION**: Division by zero.");
+}
+#pragma GCC diagnostic pop
+
+void init_idt()
+{
+    for (int i = 0; i < 32; i++) {
+        _idt_set_gate(i, _handle_interrupt, 0x8E);
+    }
+    _idt_load();
+    kprintf("Loading IDT at: %X", &idtp);
 }

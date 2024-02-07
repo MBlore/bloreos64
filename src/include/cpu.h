@@ -123,4 +123,19 @@ static inline void lgdt(void* gdt_ptr)
     asm volatile ("lgdt (%0)" :: "r"(gdt_ptr) : "memory");
 }
 
+static inline void lidt(void* idt_ptr)
+{
+    asm volatile("lidt (%0)" :: "r"(idt_ptr) : "memory");
+}
+
+static inline void disable_interrupts()
+{
+    asm("cli");
+}
+
+static inline void enable_interrupts()
+{
+    asm("sti");
+}
+
 #endif
