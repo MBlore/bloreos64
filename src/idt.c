@@ -21,6 +21,7 @@
 #include <idt.h>
 #include <cpu.h>
 #include <str.h>
+#include <string.h>
 
 #define KERNEL_CODE_SEGMENT_OFFSET 0x08 // TODO: Check this
 
@@ -45,7 +46,7 @@ void _idt_set_gate(int vector, void *handler, uint8_t flags)
     idt[vector].base_low = (uint16_t)ihandler;
     idt[vector].base_mid = (uint16_t)(ihandler >> 16),
     idt[vector].base_high = (uint32_t)(ihandler >> 32),
-    idt[vector].selector = 0x28;
+    idt[vector].selector = 0x08;
     idt[vector].flags = flags;
     idt[vector].ist = 0;
     idt[vector].reserved = 0;
@@ -55,16 +56,19 @@ void _idt_set_gate(int vector, void *handler, uint8_t flags)
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 void _handle_interrupt()
 {
-    // TODO: We're not getting here :(.
-    kprintf("**EXCEPTION**: Division by zero.");
+    kprintf("**EXCEPTION**: Division by zero.\n");
+    asm("hlt");
 }
 #pragma GCC diagnostic pop
 
 void init_idt()
 {
+    memset(&idt, 0, sizeof(idt));
+
     for (int i = 0; i < 32; i++) {
+        // 0x8E = ring-0 privilege level.
         _idt_set_gate(i, _handle_interrupt, 0x8E);
     }
     _idt_load();
-    kprintf("Loading IDT at: %X", &idtp);
+    kprintf("Loading IDT at: %X\n", &idtp);
 }

@@ -1,1 +1,9 @@
 https://wiki.osdev.org/QEMU#Useful_QEMU_command-line_options
+
+C->Assembly: https://c.compiler-explorer.com/
+
+Instruction lookup: https://www.felixcloutier.com/x86/
+
+https://wiki.osdev.org/GDT_Tutorial
+
+Decimal/Hex table: https://kb.iu.edu/d/afdl

@@ -68,7 +68,8 @@ override CPPFLAGS := \
     -I src/include \
     $(CPPFLAGS) \
     -MMD \
-    -MP
+    -MP \
+    -g
  
 # Internal linker flags that should not be changed by the user.
 override LDFLAGS += \

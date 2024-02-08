@@ -34,7 +34,7 @@ struct gdt_entry
 struct gdt_ptr
 {
     uint16_t limit;
-    uint16_t base;
+    uint64_t base;
 } __attribute__((packed));
 
 #define GDT_ENTRIES 3
