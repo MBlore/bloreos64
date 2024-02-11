@@ -23,9 +23,13 @@
 #include <serial.h>
 #include <str.h>
 #include <cpu.h>
+#include <cpuid.h>
 #include <mem.h>
 #include <gdt.h>
 #include <idt.h>
+#include <ps2.h>
+#include <apic.h>
+#include "kernel.h"
 
 // Set the base revision to 1, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -121,16 +125,45 @@ void kernel_main(void)
     kprintf("Address 1: 0x%X\n", ptr);
     kprintf("Address 2: 0x%X\n", ptr2);
 
-    kprintf("Making a divide by 0 problem...\n");
+    apic_init();
+
+    report_cpu_details();
 
     //int volatile *xptr = (int *)0x1;
     //int volatile value = *xptr;
 
-    __builtin_trap();
+    //__builtin_trap();
 
     //kprintf("Result: %d\n", value);
 
-    kprintf("Finished.\n");
-
     hcf();
+}
+
+void report_cpu_details()
+{
+    char vendor[13] = {0};
+    get_cpu_vendor(vendor);
+    kprintf("CPU Vendor: %s\n", vendor);
+
+    char brand[49] = {0};
+    get_cpu_brand(brand);
+    kprintf("CPU Brand: %s\n", brand);
+
+    uint32_t logicalProcessorsPerCore, totalLogicalProcessors;
+    get_cpu_topology(&logicalProcessorsPerCore, &totalLogicalProcessors);
+
+    kprintf("Logical Processors Per Core: %d\n", logicalProcessorsPerCore);
+    kprintf("Total Logical Processors: %d\n", totalLogicalProcessors);
+
+    uint32_t baseFrequencyMHz, maxFrequencyMHz, busFrequencyMHz;
+    get_cpu_frequency(&baseFrequencyMHz, &maxFrequencyMHz, &busFrequencyMHz);
+
+    if (baseFrequencyMHz == 0 && maxFrequencyMHz == 0 && busFrequencyMHz == 0) {
+        kprintf("CPU Frequency (0x16) not supported.\n");
+    }
+    else {
+        kprintf("Base Frequency: %d\n", baseFrequencyMHz);
+        kprintf("Max Frequency: %d\n", maxFrequencyMHz);
+        kprintf("Bus Frequency: %d\n", busFrequencyMHz);
+    }
 }

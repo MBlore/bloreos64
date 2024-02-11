@@ -7,3 +7,6 @@ Instruction lookup: https://www.felixcloutier.com/x86/
 https://wiki.osdev.org/GDT_Tutorial
 
 Decimal/Hex table: https://kb.iu.edu/d/afdl
+
+Intel IO Controller Datasheet: https://www.intel.sg/content/dam/doc/datasheet/io-controller-hub-10-family-datasheet.pdf
+

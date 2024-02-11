@@ -83,6 +83,19 @@ static inline void set_rax(uint64_t val)
     asm volatile ("movq %0, %%rax" :: "r"(val) : "memory");
 }
 
+static inline uint64_t read_msr(uint32_t msr_id)
+{
+    uint32_t low, high;
+
+    asm volatile (
+        "rdmsr" :
+        "=a"(low), "=d"(high) :
+        "c"(msr_id)
+    );
+
+    return ((uint64_t) high << 32) | low;
+}
+
 /*
     Control registers, only available in ring-0.
     CR0 - System control flags
@@ -99,6 +112,16 @@ static inline uint64_t get_cr0()
     uint64_t val;
     asm volatile ("movq %%cr0, %0" : "=r"(val) :: "memory");
     return val;
+}
+
+static inline void cpuid(int code, uint32_t *a, uint32_t *d)
+{
+    asm volatile (
+        "cpuid"
+        : "=a"(*a), "=d"(*d)
+        : "O"(code)
+        : "ebx", "ecx"
+        );
 }
 
 static inline int is_paging_enabled()

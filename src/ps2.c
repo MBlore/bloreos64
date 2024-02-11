@@ -15,23 +15,20 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_MEM_H
-#define _BLOREOS_MEM_H
+#include <ps2.h>
+#include <cpu.h>
 
-#include <stdint.h>
-#include <stddef.h>
-#include <limine.h>
+#define PORT_PS2_DATA (uint16_t)0x60
+#define PORT_PS2_STATUSCMD (uint16_t)0x64
 
-#define PAGE_SIZE 4096
+uint8_t ps2_read_key()
+{
+    uint8_t status = inb(PORT_PS2_STATUSCMD);
 
-extern volatile struct limine_memmap_response *memmap;
+    if (status & 1) {
+        // We have key data to read.
+        return inb(PORT_PS2_DATA);
+    }
 
-extern uint64_t total_memory_bytes;
-extern uint64_t max_pages_available;
-extern uint64_t num_pages_available;
-extern uint64_t vmm_higher_half_offset;
-
-void kmem_init();
-void* kalloc(size_t numBytes);
-
-#endif
+    return 0;
+}

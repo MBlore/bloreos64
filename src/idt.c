@@ -28,6 +28,8 @@
 #define INTERRUPT_GATE 0xE;
 #define TRAP_GATE 0xF;
 
+#define KEYBOARD_VECTOR 32
+
 struct idt_entry idt[256];
 struct idt_ptr idtp;
 
@@ -46,7 +48,7 @@ void _idt_set_gate(int vector, void *handler, uint8_t flags)
     idt[vector].base_low = (uint16_t)ihandler;
     idt[vector].base_mid = (uint16_t)(ihandler >> 16),
     idt[vector].base_high = (uint32_t)(ihandler >> 32),
-    idt[vector].selector = 0x08;
+    idt[vector].selector = 0x08; // Code segment in the GDT.
     idt[vector].flags = flags;
     idt[vector].ist = 0;
     idt[vector].reserved = 0;
@@ -56,7 +58,7 @@ void _idt_set_gate(int vector, void *handler, uint8_t flags)
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 void _handle_interrupt()
 {
-    kprintf("**EXCEPTION**: Division by zero.\n");
+    kprintf("**FAULT**: Division by zero.\n");
     asm("hlt");
 }
 #pragma GCC diagnostic pop

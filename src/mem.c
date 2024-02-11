@@ -67,7 +67,7 @@ static uint64_t num_pages_in_map = 0;
 static uint8_t *page_bitmap = NULL;
 
 /* The location in virtual memory to the higher-half */
-uint64_t higher_half_offset = 0;
+uint64_t vmm_higher_half_offset = 0;
 
 /*
     The cursor tracks the last page index where we last allocated memory from.
@@ -195,7 +195,7 @@ void __create_page_bitmap()
         if (entry->length >= bitmap_size) {
             // We've got a spot, lets point there.
             // We have to use the HHDM offset to correctly point to this physical place in virtual memory.
-            page_bitmap = (uint8_t*)(entry->base + higher_half_offset);
+            page_bitmap = (uint8_t*)(entry->base + vmm_higher_half_offset);
 
             // Now set all the bits to 1 in the map to mark everything as taken to start with.
             memset(page_bitmap, 0xFF, bitmap_size);
@@ -213,7 +213,7 @@ void __init_stats()
 {
     memmap = memmap_request.response;
     hhdm = hhdm_request.response;
-    higher_half_offset = hhdm->offset;
+    vmm_higher_half_offset = hhdm->offset;
 
     // Gather some stats about the memory map so we know how big we need to make our
     // page bitmap.
@@ -264,7 +264,7 @@ void kmem_init()
 
 inline void* __get_addr_from_page(uint64_t page)
 {
-    return (void*)(lowest_address + (page * PAGE_SIZE) + higher_half_offset);
+    return (void*)(lowest_address + (page * PAGE_SIZE) + vmm_higher_half_offset);
 }
 
 void __reserve_pages(uint64_t startPage, uint64_t pages)
