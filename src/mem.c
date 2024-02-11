@@ -357,3 +357,34 @@ void* kalloc(size_t numBytes)
 
     return NULL;
 }
+
+// Dumps contents of the specified memory location in char format.
+void memdumps(void *location, uint64_t len_bytes)
+{
+    char * chLocation = (char*)location;
+    for (uint64_t i = 0; i < len_bytes; i++) {
+        kprintf("%c", *chLocation++);
+    }
+    
+    kprintf("\n");
+}
+
+void memdumpx32(void *location, uint64_t len_bytes)
+{
+    uint32_t *data = (uint32_t*)location;
+    for (uint64_t i = 0; i < (len_bytes / 4); i++) {
+        kprintf("0x%X ", *data++);
+    }
+    
+    kprintf("\n");
+}
+
+void memdumpx64(void *location, uint64_t len_bytes)
+{
+    uint64_t *data = (uint64_t*)location;
+    for (uint64_t i = 0; i < (len_bytes / 8); i++) {
+        kprintf("0x%X ", *data++);
+    }
+    
+    kprintf("\n");
+}

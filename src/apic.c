@@ -35,6 +35,16 @@ uint32_t _check_local_apic_cpuid() {
     return (edx >> 9) & 1;
 }
 
+static inline uint32_t apic_read(uint32_t offset)
+{
+    return *((volatile uint32_t*)(vmm_higher_half_offset + apic_base + offset));
+}
+
+static inline void apic_write(uint32_t offset, uint32_t val)
+{
+    *((volatile uint32_t*)(vmm_higher_half_offset + apic_base + offset)) = val;
+}
+
 void apic_init()
 {
     apic_base = read_msr(IA32_APIC_BASE_MSR);
@@ -44,11 +54,8 @@ void apic_init()
 
     kprintf("APIC Base: %X\n", apic_base);
 
-    volatile uint32_t* apic_id_reg = (volatile uint32_t*)(vmm_higher_half_offset + apic_base + APIC_ID_OFFSET);
-    uint32_t apic_id = *apic_id_reg;
-
-    volatile uint32_t* apic_ver_reg = (volatile uint32_t*)(vmm_higher_half_offset + apic_base + APIC_VERSION_OFFSET);
-    uint32_t apic_version = *apic_ver_reg;
+    uint32_t apic_id = apic_read(APIC_ID_OFFSET);
+    uint32_t apic_version = apic_read(APIC_VERSION_OFFSET);
 
     kprintf("APIC ID: 0x%X\n", apic_id);
     kprintf("APIC Version: 0x%X\n", apic_version);

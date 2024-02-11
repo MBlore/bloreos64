@@ -29,6 +29,7 @@
 #include <idt.h>
 #include <ps2.h>
 #include <apic.h>
+#include <acpi.h>
 #include "kernel.h"
 
 // Set the base revision to 1, this is recommended as this is the latest
@@ -61,19 +62,8 @@ static inline void put_pixel(struct limine_framebuffer *framebuffer, int x, int 
     fb_ptr[index] = color;
 }
 
-void kernel_main(void)
+void fb_init()
 {
-    // Ensure the bootloader actually understands our base revision (see spec).
-    if (LIMINE_BASE_REVISION_SUPPORTED == false) {
-        hcf();
-    }
-
-    disable_interrupts();
-    init_gdt();
-    init_idt();
-    enable_interrupts();
-    kprintf("GDT/IDT initialized.\n");
-
     // Fetch the first framebuffer.
     struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
 
@@ -104,9 +94,26 @@ void kernel_main(void)
         }
     }
 
-    kprintf("BloreOS Alpha\n");
     kprintf("Width: %d, Height: %d\n", framebuffer->width, framebuffer->height);
+}
 
+void kernel_main(void)
+{
+    // Ensure the bootloader actually understands our base revision (see spec).
+    if (LIMINE_BASE_REVISION_SUPPORTED == false) {
+        hcf();
+    }
+
+    kprintf("BloreOS Alpha\n");
+    report_cpu_details();
+    disable_interrupts();
+    init_gdt();
+    init_idt();
+    enable_interrupts();
+    kprintf("GDT/IDT initialized.\n");
+
+    fb_init();
+ 
     if (is_paging_enabled()) {
         kprintf("Paging enabled.\n");
     } else {
@@ -116,25 +123,8 @@ void kernel_main(void)
     kmem_init();
     kprintf("PMM Available Pages: %lu\n", num_pages_available);
 
-    void* ptr = kalloc(10);
-    kprintf("PMM Available Pages: %lu\n", num_pages_available);
-
-    void* ptr2 = kalloc(5000);
-    kprintf("PMM Available Pages: %lu\n", num_pages_available);
-
-    kprintf("Address 1: 0x%X\n", ptr);
-    kprintf("Address 2: 0x%X\n", ptr2);
-
-    apic_init();
-
-    report_cpu_details();
-
-    //int volatile *xptr = (int *)0x1;
-    //int volatile value = *xptr;
-
-    //__builtin_trap();
-
-    //kprintf("Result: %d\n", value);
+    acpi_init();
+    //apic_init();
 
     hcf();
 }

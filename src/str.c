@@ -186,6 +186,7 @@ size_t ltoa(int64_t num, char str[], size_t base)
 /*
     Formats a series of arguments in specific formats and stores the string equivalents in buffer
 
+    %c - single char
     %d - int
     %x - uint64 as hexadecimal
     %X - uint64 as hexadecimal upper-case
@@ -217,6 +218,9 @@ int vsnprintf(char buffer[], size_t size, const char format[], va_list args)
                 while (*str != '\0') {
                     buffer[bufferIndex++] = *str++;
                 }
+            } else if (format[i] == 'c') {
+                int ch = va_arg(args, int);
+                buffer[bufferIndex++] = (char)ch;
             } else if (format[i] == 'l' && format[i+1] == 'u') {
                 ++i; // Move past the 2nd char format token
                 uint64_t value = va_arg(args, uint64_t);

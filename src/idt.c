@@ -58,7 +58,7 @@ void _idt_set_gate(int vector, void *handler, uint8_t flags)
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 void _handle_interrupt()
 {
-    kprintf("**FAULT**: Division by zero.\n");
+    kprintf("**FAULT**: Unhandled fault occurred.\n");
     asm("hlt");
 }
 #pragma GCC diagnostic pop

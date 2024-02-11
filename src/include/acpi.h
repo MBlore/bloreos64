@@ -15,27 +15,11 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_MEM_H
-#define _BLOREOS_MEM_H
+#ifndef _BLOREOS_ACPI_H
+#define _BLOREOS_ACPI_H
 
 #include <stdint.h>
-#include <stddef.h>
-#include <limine.h>
 
-#define PAGE_SIZE 4096
-
-extern volatile struct limine_memmap_response *memmap;
-
-extern uint64_t total_memory_bytes;
-extern uint64_t max_pages_available;
-extern uint64_t num_pages_available;
-extern uint64_t vmm_higher_half_offset;
-
-void kmem_init();
-void* kalloc(size_t numBytes);
-
-void memdumps(void *location, uint64_t len_bytes);
-void memdumpx32(void *location, uint64_t len_bytes);
-void memdumpx64(void *location, uint64_t len_bytes);
+void acpi_init();
 
 #endif
