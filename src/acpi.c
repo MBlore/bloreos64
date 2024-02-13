@@ -17,11 +17,16 @@
 */
 /*
     Everything to manage the ACPI.
+    The ACPI is a nest of tables in memory.
 */
 #include <acpi.h>
 #include <mem.h>
 #include <cpu.h>
 #include <str.h>
+
+// Interrupt Controller Structure Types 
+#define ICS_ID_CPU_LAPIC 0
+#define ICS_ID_IO_APIC 1
 
 struct limine_rsdp_request rsdp_request = {
     .id = LIMINE_RSDP_REQUEST,
@@ -29,7 +34,7 @@ struct limine_rsdp_request rsdp_request = {
 
 // Root System Description Pointer Structure
 struct rsdp {
-    char signature[8];          // "RSD PTR "
+    char signature[8];              // "RSD PTR "
     uint8_t checksum;
     char oemid[6];
     uint8_t revision;
@@ -38,6 +43,20 @@ struct rsdp {
     uint64_t xsdt_addr;
     uint8_t ext_checksum;
     char reserved[3];
+};
+
+// Root System Description Table
+struct rsdt {
+    char signature[4];              // "RSDT"
+    uint32_t length;
+    uint8_t revision;
+    uint8_t checksum;
+    char oem_id[6];
+    uint64_t oem_table_id;
+    uint32_t oem_revision;
+    uint32_t creator_id;
+    uint32_t creator_revision;
+    uint32_t entries[];             // 32-bit (RSDT) or 64-bit entries (XSDT).
 };
 
 // System Description Table Header (DESCRIPTION_HEADER)
@@ -54,26 +73,21 @@ struct sysdesc {
 } __attribute__((packed));
 
 // Multiple APIC Description Table (MADT)
-struct sysdesc_madt {
+struct madt {
     struct sysdesc desc;
-    uint32_t lic_addr;
+    uint32_t lapic_addr;        // The local APIC address which should match what we get from the MSR, which should be 0xFEE00000.
     uint32_t flags;
-    // 2 bytes / type/length
-};
+} __attribute__((packed));
 
-// Root System Description Table
-struct rsdt {
-    char signature[4];              // "RSDT"
-    uint32_t length;
-    uint8_t revision;
-    uint8_t checksum;
-    char oem_id[6];
-    uint64_t oem_table_id;
-    uint32_t oem_revision;
-    uint32_t creator_id;
-    uint32_t creator_revision;
-    uint32_t entries;              // 32-bit (RSDT) or 64-bit entries (XSDT).
-};
+// I/O APIC Structure inside the ICL of the MADT.
+struct ioapic {
+    char type;
+    char length;
+    char ioapic_id;
+    char reserved;
+    uint32_t ioapic_addr;
+    uint32_t gsi_base;
+} __attribute__((packed));
 
 struct rsdp *rsdp = NULL;
 struct rsdt *rsdt = NULL;
@@ -96,20 +110,56 @@ void acpi_init()
     kprintf("RSDT Sig: %c%c%c%c\n", rsdt->signature[0], rsdt->signature[1], rsdt->signature[2], rsdt->signature[3]);
     kprintf("RSDT Length: %d\n", rsdt->length);
 
-    uint32_t items = (rsdt->length - 36) / 4; // 36 bytes in fields up to entries, 4 byte per entry.
+    // 36 bytes in fields up to entries, 4 byte per entry.
+    uint32_t items = (rsdt->length - 36) / 4;
     kprintf("RSDT Entries Count: %d\n", items);
 
     kprintf("RSDT Addr: 0x%X\n", rsdt);
 
     // Walk the table.
-    uint32_t *pEntry = &rsdt->entries;
     for (uint32_t i = 0; i < items; i++) {
-        // Report entry.        
-        struct sysdesc *desc = (struct sysdesc*)((uint64_t)*pEntry + vmm_higher_half_offset);
+        // Report entry.
+        struct sysdesc *desc = (struct sysdesc*)((uint64_t)rsdt->entries[i] + vmm_higher_half_offset);
         kprintf("Entry %d Sig: %c%c%c%c\n", i, desc->signature[0], desc->signature[1], desc->signature[2], desc->signature[3]);
         kprintf("Entry %d Length: %d\n", i, desc->length);
 
-        pEntry++;
+        if (desc->signature[0] == 'A' &&
+            desc->signature[1] == 'P' &&
+            desc->signature[2] == 'I' &&
+            desc->signature[3] == 'C') {
+                struct madt *pMadt = (struct madt*)desc;
+                kprintf("Local IC Addr: 0x%X\n", pMadt->lapic_addr);
+
+                
+                kprintf("Start MADT: 0x%X\n", pMadt);
+                kprintf("MADT Length: %d\n", (int)pMadt->desc.length);
+
+                // Get a pointer to the begining of the interrupt
+                // control structure list which is located at the end of the MADT.
+                char *pICLStart = (char*)pMadt + sizeof(struct madt);
+                char *pICLItem = pICLStart;
+
+                // Walk the ICL list.
+                do {
+                    kprintf("ICL Entry ID: %d\n", (int)*pICLItem);
+                    kprintf("ICL Entry Len: %d\n", (int)pICLItem[1]);
+
+                    // Check the type, we're looking for the I/O APIC.
+                    if (*pICLItem == ICS_ID_IO_APIC) {
+                        // There maybe multiple I/O apic entries, each handling
+                        // different sets of IRQs.
+                        kprintf("Found an IO/APIC entry.\n");
+                        struct ioapic *pIOApic = (struct ioapic*)pICLItem;
+
+                        kprintf("IO APIC ID: %d\n", (int)pIOApic->ioapic_id);
+                        kprintf("IO APIC Addr: 0x%X\n", pIOApic->ioapic_addr);
+                        kprintf("IO APIC GSI Base: %d\n", pIOApic->gsi_base);
+                    }
+
+                    // Move past this entire structure (length is at 2nd byte).
+                    pICLItem += pICLItem[1];
+                } while (pICLItem - pICLStart < pMadt->desc.length);
+            }
     }
 }
 
