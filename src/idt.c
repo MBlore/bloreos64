@@ -28,8 +28,6 @@
 #define INTERRUPT_GATE 0xE;
 #define TRAP_GATE 0xF;
 
-#define KEYBOARD_VECTOR 32
-
 struct idt_entry idt[256];
 struct idt_ptr idtp;
 
@@ -63,7 +61,12 @@ void _handle_interrupt()
 }
 #pragma GCC diagnostic pop
 
-void init_idt()
+void _handle_keyboard()
+{
+    kprintf("Keyboard interrupt!");
+}
+
+void idt_init()
 {
     memset(&idt, 0, sizeof(idt));
 
@@ -71,6 +74,10 @@ void init_idt()
         // 0x8E = ring-0 privilege level.
         _idt_set_gate(i, _handle_interrupt, 0x8E);
     }
+
+    // Device gates.
+    _idt_set_gate(KEYBOARD_VECTOR, _handle_keyboard, 0x8E);
+
     _idt_load();
     kprintf("Loading IDT at: %X\n", &idtp);
 }

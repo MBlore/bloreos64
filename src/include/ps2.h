@@ -20,6 +20,6 @@
 
 #include <stdint.h>
 
-uint8_t ps2_read_key();
+void ps2_init();
 
 #endif

@@ -21,6 +21,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define KEYBOARD_VECTOR 32
+#define MOUSE_VECTOR 33
+#define NETWORK_VECTOR 34
+
 struct idt_entry
 {
     uint16_t base_low;          // Handler location bits 0..15
@@ -46,6 +50,6 @@ struct idt_frame {
     uint64_t ss;
 };
 
-void init_idt();
+void idt_init();
 
 #endif

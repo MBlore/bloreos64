@@ -18,7 +18,7 @@
 /*
     Everything to manage the APIC.
 */
-#include <apic.h>
+#include <lapic.h>
 #include <mem.h>
 #include <cpu.h>
 #include <str.h>
@@ -28,42 +28,43 @@
 #define APIC_VERSION_OFFSET 0x30
 
 uint64_t apic_base;
+uint32_t lapic_id;
 
-uint32_t _check_local_apic_cpuid() {
+uint32_t _check_lapic_cpuid() {
     uint32_t eax, edx;
     cpuid(1, &eax, &edx);
     return (edx >> 9) & 1;
 }
 
-static inline uint32_t apic_read(uint32_t offset)
+static inline uint32_t lapic_read(uint32_t offset)
 {
     return *((volatile uint32_t*)(vmm_higher_half_offset + apic_base + offset));
 }
 
-static inline void apic_write(uint32_t offset, uint32_t val)
+static inline void lapic_write(uint32_t offset, uint32_t val)
 {
     *((volatile uint32_t*)(vmm_higher_half_offset + apic_base + offset)) = val;
 }
 
-void apic_init()
+void lapic_init()
 {
     apic_base = read_msr(IA32_APIC_BASE_MSR);
     
     // Mask out the flags to get only the address.
     apic_base = (apic_base & 0xFFFFF000);
 
-    kprintf("APIC Base: %X\n", apic_base);
+    kprintf("LAPIC Base: %X\n", apic_base);
 
-    uint32_t apic_id = apic_read(APIC_ID_OFFSET);
-    uint32_t apic_version = apic_read(APIC_VERSION_OFFSET);
+    lapic_id = lapic_read(APIC_ID_OFFSET);
+    uint32_t apic_version = lapic_read(APIC_VERSION_OFFSET);
 
-    kprintf("APIC ID: 0x%X\n", apic_id);
-    kprintf("APIC Version: 0x%X\n", apic_version);
+    kprintf("LAPIC ID: %d\n", lapic_id);
+    kprintf("LAPIC Version: %d\n", apic_version);
 
     // Get enabled flag.
     volatile uint32_t* apic_reg = (volatile uint32_t*)(vmm_higher_half_offset + apic_base);
     uint32_t apic_flags = *apic_reg;
 
-    kprintf("CPUID APIC Enabled: %d\n", _check_local_apic_cpuid());
+    kprintf("CPUID APIC Enabled: %d\n", _check_lapic_cpuid());
     kprintf("MSR APIC Enabled: %d\n", apic_flags);
 }

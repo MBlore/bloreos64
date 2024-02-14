@@ -28,8 +28,9 @@
 #include <gdt.h>
 #include <idt.h>
 #include <ps2.h>
-#include <apic.h>
+#include <lapic.h>
 #include <acpi.h>
+#include <ioapic.h>
 #include "kernel.h"
 
 // Set the base revision to 1, this is recommended as this is the latest
@@ -108,7 +109,7 @@ void kernel_main(void)
     report_cpu_details();
     disable_interrupts();
     init_gdt();
-    init_idt();
+    idt_init();
     enable_interrupts();
     kprintf("GDT/IDT initialized.\n");
 
@@ -123,10 +124,14 @@ void kernel_main(void)
     kmem_init();
     kprintf("PMM Available Pages: %lu\n", num_pages_available);
 
-    apic_init();
-
+    lapic_init();
     acpi_init();
-    
+
+    ps2_init();
+
+    while(1) {
+        // Spin forever.
+    }
 
     hcf();
 }

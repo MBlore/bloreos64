@@ -15,11 +15,13 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_APIC_H
-#define _BLOREOS_APIC_H
+#ifndef _BLOREOS_LAPIC_H
+#define _BLOREOS_LAPIC_H
 
 #include <stdint.h>
 
-void apic_init();
+void lapic_init();
+
+extern uint32_t lapic_id;
 
 #endif
