@@ -22,4 +22,29 @@
 
 void acpi_init();
 
+// I/O APIC Structure inside the ICL of the MADT (ID 1).
+struct ioapic {
+    char type;
+    char length;
+    char ioapic_id;
+    char reserved;
+    uint32_t ioapic_addr;
+    uint32_t gsi_base;
+} __attribute__((packed));
+
+// Interrupt Source Override table in the MADT (ID 2).
+struct iso {
+    char type;
+    char length;
+    uint8_t bus_source;
+    uint8_t irq_source;
+    uint32_t gsi;
+    uint16_t flags;
+} __attribute__((packed));
+
+#define IOAPIC_LIST_LEN 32
+#define ISO_LIST_LEN 128
+extern struct ioapic *ioapic_list[];
+extern struct iso *iso_list[];
+
 #endif

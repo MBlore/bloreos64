@@ -15,31 +15,21 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_MEM_H
-#define _BLOREOS_MEM_H
+#ifndef _BLOREOS_IOAPIC_H
+#define _BLOREOS_IOAPIC_H
 
 #include <stdint.h>
-#include <stddef.h>
-#include <limine.h>
+#include <acpi.h>
 
-#define PAGE_SIZE 4096
+#define IOAPICID          0x00
+#define IOAPICVER         0x01
+#define IOAPICARB         0x02
+#define IOAPICREDTBL(n)   (0x10 + 2 * n) // lower-32bits (add +1 for upper 32-bits)
 
-extern volatile struct limine_memmap_response *memmap;
+//static void ioapic_write(struct ioapic *pApic, const uint8_t offset, const uint32_t val);
 
-extern uint64_t total_memory_bytes;
-extern uint64_t max_pages_available;
-extern uint64_t num_pages_available;
-extern uint64_t vmm_higher_half_offset;
+static uint32_t ioapic_read(struct ioapic *pApic, const uint8_t offset);
 
-void kmem_init();
-void* kalloc(size_t numBytes);
-
-void memdumps(void *location, uint64_t len_bytes);
-void memdumpx32(void *location, uint64_t len_bytes);
-void memdumpx64(void *location, uint64_t len_bytes);
-
-void *memset(void *s, int c, size_t n);
-void *memmove(void *dest, const void *src, size_t n);
-int memcmp(const void *s1, const void *s2, size_t n);
+struct ioapic* get_apic_from_gsi(uint32_t gsi);
 
 #endif
