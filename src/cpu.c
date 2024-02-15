@@ -15,21 +15,24 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_PS2_H
-#define _BLOREOS_PS2_H
 
-#include <stdint.h>
+#include <cpu.h>
+#include <limine.h>
+#include <str.h>
 
-typedef struct KeyEvent {
-    uint8_t scan_code;
-    uint8_t event_type;     // 0 = key down, 1 = key up
-    char ascii;
-} KeyEvent_t;
+volatile struct limine_smp_request smp_request = {
+    .id = LIMINE_SMP_REQUEST,
+    .revision = 0,
+    .flags = 0};
 
-extern KeyEvent_t* scancode_map[];
+uint32_t bsp_lapic_id;      // Bootstrap processor APIC ID.
+uint64_t cpu_count;
 
-uint8_t ps2_read();
-uint8_t ps2_read_no_wait();
-void ps2_init();
+void cpu_init()
+{
+    bsp_lapic_id = smp_request.response->bsp_lapic_id;
+    cpu_count = smp_request.response->cpu_count;
 
-#endif
+    kprintf("BSP LAPIC ID: %d\n", bsp_lapic_id);
+    kprintf("CPU Count: %d\n", cpu_count);
+}

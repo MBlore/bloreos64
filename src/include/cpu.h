@@ -20,6 +20,11 @@
 
 #include <stdint.h>
 
+extern uint32_t bsp_lapic_id;      // Bootstrap processor APIC ID.
+extern uint64_t cpu_count;
+
+extern void cpu_init();
+
 /* Sends a 8-bit value to a I/O location */
 static inline void outb(uint16_t port, uint8_t val)
 {
@@ -154,6 +159,70 @@ static inline void disable_interrupts()
 static inline void enable_interrupts()
 {
     asm("sti");
+}
+
+/*
+ * Interrupt service routine state save.
+*/
+static inline void isr_save()
+{
+    asm(
+        "push %%r15\n\t"
+        "push %%r14\n\t"
+        "push %%r13\n\t"
+        "push %%r12\n\t"
+        "push %%r11\n\t"
+        "push %%r10\n\t"
+        "push %%r9\n\t"
+        "push %%r8\n\t"
+        "push %%rbp\n\t"
+        "push %%rdi\n\t"
+        "push %%rsi\n\t"
+        "push %%rdx\n\t"
+        "push %%rcx\n\t"
+        "push %%rbx\n\t"
+        "push %%rax\n\t"
+        "mov %%es, %%eax\n\t"
+        "push %%rax\n\t"
+        "mov %%ds, %%eax\n\t"
+        "push %%rax\n\t"
+        :
+        :
+        : "memory"
+    );
+}
+
+/*
+ * Interrupt service routine state restore.
+*/
+static inline void isr_restore()
+{
+    asm(
+        "pop %%rax\n\t"
+        "mov %%eax, %%ds\n\t"
+        "pop %%rax\n\t"
+        "mov %%eax, %%es\n\t"
+        "pop %%rax\n\t"
+        "pop %%rbx\n\t"
+        "pop %%rcx\n\t"
+        "pop %%rdx\n\t"
+        "pop %%rsi\n\t"
+        "pop %%rdi\n\t"
+        "pop %%rbp\n\t"
+        "pop %%r8\n\t"
+        "pop %%r9\n\t"
+        "pop %%r10\n\t"
+        "pop %%r11\n\t"
+        "pop %%r12\n\t"
+        "pop %%r13\n\t"
+        "pop %%r14\n\t"
+        "pop %%r15\n\t"
+        "add $8, %%rsp\n\t"
+        "iretq"
+        :
+        :
+        : "memory"
+    );
 }
 
 #endif

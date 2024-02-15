@@ -124,6 +124,7 @@ void kernel_main(void)
     kmem_init();
     kprintf("PMM Available Pages: %lu\n", num_pages_available);
 
+    cpu_init();
     lapic_init();
     acpi_init();
 
