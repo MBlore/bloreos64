@@ -22,6 +22,8 @@
 #include <cpu.h>
 #include <str.h>
 #include <string.h>
+#include <lapic.h>
+#include <ps2.h>
 
 #define KERNEL_CODE_SEGMENT_OFFSET 0x08 // TODO: Check this
 
@@ -63,7 +65,64 @@ void _handle_interrupt()
 
 void _handle_keyboard()
 {
-    kprintf("Keyboard interrupt!");
+    // Save stuff.
+    asm(
+        "push %%r15\n\t"
+        "push %%r14\n\t"
+        "push %%r13\n\t"
+        "push %%r12\n\t"
+        "push %%r11\n\t"
+        "push %%r10\n\t"
+        "push %%r9\n\t"
+        "push %%r8\n\t"
+        "push %%rbp\n\t"
+        "push %%rdi\n\t"
+        "push %%rsi\n\t"
+        "push %%rdx\n\t"
+        "push %%rcx\n\t"
+        "push %%rbx\n\t"
+        "push %%rax\n\t"
+        "mov %%es, %%eax\n\t"
+        "push %%rax\n\t"
+        "mov %%ds, %%eax\n\t"
+        "push %%rax\n\t"
+        :
+        :
+        : "memory"
+    );
+
+    uint8_t key = ps2_read();
+    kprintf("Key: %d\n", key);
+
+    lapic_eoi();
+
+    // Restore stuff.
+    asm(
+        "pop %%rax\n\t"
+        "mov %%eax, %%ds\n\t"
+        "pop %%rax\n\t"
+        "mov %%eax, %%es\n\t"
+        "pop %%rax\n\t"
+        "pop %%rbx\n\t"
+        "pop %%rcx\n\t"
+        "pop %%rdx\n\t"
+        "pop %%rsi\n\t"
+        "pop %%rdi\n\t"
+        "pop %%rbp\n\t"
+        "pop %%r8\n\t"
+        "pop %%r9\n\t"
+        "pop %%r10\n\t"
+        "pop %%r11\n\t"
+        "pop %%r12\n\t"
+        "pop %%r13\n\t"
+        "pop %%r14\n\t"
+        "pop %%r15\n\t"
+        "add $8, %%rsp\n\t"
+        "iretq"
+        :
+        :
+        : "memory"
+    );
 }
 
 void idt_init()

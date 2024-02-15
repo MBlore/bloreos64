@@ -42,20 +42,6 @@ void ps2_write(uint16_t port, uint8_t value) {
 }
 
 /*
-uint8_t ps2_read_key()
-{
-    uint8_t status = inb(PORT_PS2_STATUSCMD);
-
-    if (status & 1) {
-        // We have key data to read.
-        return inb(PORT_PS2_DATA);
-    }
-
-    return 0;
-}
-*/
-
-/*
  * Reads flags about the state of the PS2 device. 
 */
 uint8_t ps2_read_config()

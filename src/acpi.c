@@ -49,7 +49,7 @@ struct rsdp {
     uint64_t xsdt_addr;
     uint8_t ext_checksum;
     char reserved[3];
-};
+} __attribute__((packed));
 
 // Root System Description Table (32-bit)
 struct rsdt {
@@ -63,7 +63,7 @@ struct rsdt {
     uint32_t creator_id;
     uint32_t creator_revision;
     uint32_t entries[];             // 32-bit entries.
-};
+} __attribute__((packed));
 
 // Root System Description Table (64-bit)
 struct xsdt {
@@ -77,7 +77,7 @@ struct xsdt {
     uint32_t creator_id;
     uint32_t creator_revision;
     uint64_t entries[];             // 64-bit entries.
-};
+} __attribute__((packed));
 
 // System Description Table Header (DESCRIPTION_HEADER)
 struct sysdesc {

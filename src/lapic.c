@@ -68,3 +68,9 @@ void lapic_init()
     kprintf("CPUID APIC Enabled: %d\n", _check_lapic_cpuid());
     kprintf("MSR APIC Enabled: %d\n", apic_flags);
 }
+
+#define EOI_REGISTER_OFFSET 0x0B0
+void lapic_eoi()
+{
+    lapic_write(EOI_REGISTER_OFFSET, 0);   
+}
