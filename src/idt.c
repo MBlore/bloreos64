@@ -75,8 +75,6 @@ void _handle_keyboard()
         if (pKE->event_type == 0 && pKE->ascii != 0) {
             // Key down.
             kprintf("%c", pKE->ascii);
-        } else {
-            kprintf("Key: %d\n", key);
         }
     } else {
         kprintf("Not Found: %d\n", key);

@@ -293,5 +293,6 @@ void kprintf(const char format[], ...)
     va_end(args);
 
     write_serial_str(PORT_COM1, buffer);
+
     tprintf(buffer);
 }

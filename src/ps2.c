@@ -170,24 +170,24 @@ KeyEvent_t key_map[] = {
     { .scan_code = 197, .event_type = 1, .ascii = 0 },
 
     // Control keys.
-    { .scan_code = 28, .event_type = 0, .ascii = 0 },   // Enter
-    { .scan_code = 156, .event_type = 1, .ascii = 0 },
-    { .scan_code = 14, .event_type = 0, .ascii = 0 },   // Backspace
-    { .scan_code = 142, .event_type = 1, .ascii = 0 },
-    { .scan_code = 42, .event_type = 0, .ascii = 0 },   // Left Shift
-    { .scan_code = 170, .event_type = 1, .ascii = 0 },
-    { .scan_code = 54, .event_type = 0, .ascii = 0 },   // Right Shift
-    { .scan_code = 182, .event_type = 1, .ascii = 0 },
-    { .scan_code = 29, .event_type = 0, .ascii = 0 },   // Left Ctrl
-    { .scan_code = 157, .event_type = 1, .ascii = 0 },
-    { .scan_code = 56, .event_type = 0, .ascii = 0 },   // Left Alt
-    { .scan_code = 184, .event_type = 1, .ascii = 0 },
-    { .scan_code = 15, .event_type = 0, .ascii = 0 },   // Tab
-    { .scan_code = 143, .event_type = 1, .ascii = 0 },
-    { .scan_code = 1, .event_type = 0, .ascii = 0 },    // Escape
-    { .scan_code = 129, .event_type = 1, .ascii = 0 },
-    { .scan_code = 58, .event_type = 0, .ascii = 0 },   // Caps-lock
-    { .scan_code = 186, .event_type = 1, .ascii = 0 },
+    { .scan_code = 28, .event_type = 0, .ascii = '\n', .is_control = true },   // Enter
+    { .scan_code = 156, .event_type = 1, .ascii = 0, .is_control = true },
+    { .scan_code = 14, .event_type = 0, .ascii = 0, .is_control = true },   // Backspace
+    { .scan_code = 142, .event_type = 1, .ascii = 0, .is_control = true },
+    { .scan_code = 42, .event_type = 0, .ascii = 0, .is_control = true },   // Left Shift
+    { .scan_code = 170, .event_type = 1, .ascii = 0, .is_control = true },
+    { .scan_code = 54, .event_type = 0, .ascii = 0, .is_control = true },   // Right Shift
+    { .scan_code = 182, .event_type = 1, .ascii = 0, .is_control = true },
+    { .scan_code = 29, .event_type = 0, .ascii = 0, .is_control = true },   // Left Ctrl
+    { .scan_code = 157, .event_type = 1, .ascii = 0, .is_control = true },
+    { .scan_code = 56, .event_type = 0, .ascii = 0, .is_control = true },   // Left Alt
+    { .scan_code = 184, .event_type = 1, .ascii = 0, .is_control = true },
+    { .scan_code = 15, .event_type = 0, .ascii = '\t', .is_control = true },   // Tab
+    { .scan_code = 143, .event_type = 1, .ascii = 0, .is_control = true },
+    { .scan_code = 1, .event_type = 0, .ascii = 0, .is_control = true },    // Escape
+    { .scan_code = 129, .event_type = 1, .ascii = 0, .is_control = true },
+    { .scan_code = 58, .event_type = 0, .ascii = 0, .is_control = true },   // Caps-lock
+    { .scan_code = 186, .event_type = 1, .ascii = 0, .is_control = true },
 };
 
 // Scancodes for key-down and key-up to ASCII value.

@@ -19,11 +19,13 @@
 #define _BLOREOS_PS2_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef struct KeyEvent {
     uint8_t scan_code;
     uint8_t event_type;     // 0 = key down, 1 = key up
     char ascii;
+    bool is_control;
 } KeyEvent_t;
 
 extern KeyEvent_t* scancode_map[];

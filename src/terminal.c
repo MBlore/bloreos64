@@ -22,6 +22,7 @@
 #include <stdarg.h>
 #include <str.h>
 #include <mem.h>
+#include <stdbool.h>
 
 typedef struct {
     uint16_t magic;         // Magic bytes for identification.
@@ -45,9 +46,9 @@ uint32_t max_rows = 0;
 uint32_t max_cols = 0;
 uint32_t cursor_x = 0;
 uint32_t cursor_y = 0;
-
 uint32_t glyph_width = 0;
 uint32_t glyph_height = 0;
+bool is_ready = false;
 
 static inline uint32_t fbindex(uint32_t x, uint32_t y)
 {
@@ -63,20 +64,24 @@ static inline void _put_pixel(uint32_t x, uint32_t y, uint32_t color)
 
 void _shift_screen_up()
 {
+    // Shift all rows from the bottom to the top row, overwriting the top most row.
     uint32_t *fb = frame_buffer->address;
-    uint32_t start_pixel_index = (glyph_height * (frame_buffer->pitch / 4));
-    uint32_t end_pixel_index = (frame_buffer->height * (frame_buffer->pitch / 4)) + frame_buffer->width;
+    uint32_t start_pixel_index = fbindex(0, glyph_height);
+    uint32_t end_pixel_index = fbindex(frame_buffer->width, frame_buffer->height);
 
-    memmove(frame_buffer->address, (void*)&fb[start_pixel_index], (size_t)end_pixel_index - start_pixel_index * 4);
-
+    memmove(
+        frame_buffer->address,
+        &fb[start_pixel_index],
+        (char*)&fb[end_pixel_index] - (char*)&fb[start_pixel_index]);
+    
     // Blank the last row.
     uint32_t blank_start = fbindex(0, frame_buffer->height - glyph_height);
     uint32_t blank_end = fbindex(frame_buffer->width, frame_buffer->height);
-    memset(&fb[blank_start], 0, (blank_end - blank_start) * 4);
+    memset(&fb[blank_start], 0x000000, (char*)&fb[blank_end] - (char*)&fb[blank_start]);
 }
 
 /*
- * Loads the PSF font and sets global pointers ready for rendering. 
+ * Loads the PSF font and sets global pointers ready for rendering.
 */
 void _load_font()
 {
@@ -103,6 +108,10 @@ void _load_font()
 
 void tprintf(const char format[], ...)
 {
+    if (!is_ready) {
+        return;
+    }
+
     char buffer[256];
 
     va_list args;
@@ -180,4 +189,10 @@ void term_init()
 
     glyph_width = 8 + glyph_padding;
     glyph_height = font_header->char_height + glyph_padding;
+
+    kprintf("Resolution: %dx%d\n", frame_buffer->width, frame_buffer->height);
+    kprintf("BPP: %d\n", frame_buffer->bpp);
+    kprintf("Pitch: %d\n", frame_buffer->pitch);
+
+    is_ready = true;
 }
