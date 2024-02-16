@@ -31,6 +31,8 @@
 #include <lapic.h>
 #include <acpi.h>
 #include <ioapic.h>
+#include <terminal.h>
+
 #include "kernel.h"
 
 // Set the base revision to 1, this is recommended as this is the latest
@@ -43,60 +45,7 @@ LIMINE_BASE_REVISION(1)
 // the compiler does not optimise them away, so, in C, they should
 // NOT be made "static".
 
-struct limine_framebuffer_request framebuffer_request = {
-    .id = LIMINE_FRAMEBUFFER_REQUEST,
-    .revision = 0};
 
-// Halt and catch fire function.
-static void hcf(void)
-{
-    asm("cli");
-    for (;;) {
-        asm("hlt");
-    }
-}
-
-static inline void put_pixel(struct limine_framebuffer *framebuffer, int x, int y, uint32_t color)
-{
-    uint32_t *fb_ptr = framebuffer->address;
-    int index = (y * (framebuffer->pitch / 4)) + x;
-    fb_ptr[index] = color;
-}
-
-void fb_init()
-{
-    // Fetch the first framebuffer.
-    struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
-
-    // Note: we assume the framebuffer model is RGB with 32-bit pixels.
-    /*
-    for (size_t i = 0; i < 100; i++) {
-        uint32_t *fb_ptr = framebuffer->address;
-        fb_ptr[i * (framebuffer->pitch / 4) + i] = 0xffffff;
-    }
-    */
-
-    uint32_t *fb_ptr = framebuffer->address;
-
-    int result = init_serial(PORT_COM1);
-
-    if (result == 0) {
-        // Success
-        for (size_t x = 0; x < framebuffer->width; x++) {
-            for (size_t y = 0; y < framebuffer->height; y++) {
-                put_pixel(framebuffer, x, y, 0x00ff00);
-            }
-        }
-    }
-    else {
-        // Failed :(
-        for (size_t i = 0; i < framebuffer->height; i++) {
-            fb_ptr[i * (framebuffer->pitch / 4) + (framebuffer->width / framebuffer->height * i)] = 0xff0000;
-        }
-    }
-
-    kprintf("Width: %d, Height: %d\n", framebuffer->width, framebuffer->height);
-}
 
 void kernel_main(void)
 {
@@ -104,6 +53,9 @@ void kernel_main(void)
     if (LIMINE_BASE_REVISION_SUPPORTED == false) {
         hcf();
     }
+
+    init_serial(PORT_COM1);
+    term_init();
 
     kprintf("BloreOS Alpha\n");
     report_cpu_details();
@@ -113,7 +65,7 @@ void kernel_main(void)
     enable_interrupts();
     kprintf("GDT/IDT initialized.\n");
 
-    fb_init();
+    //fb_init();
  
     if (is_paging_enabled()) {
         kprintf("Paging enabled.\n");

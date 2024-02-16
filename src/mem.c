@@ -221,8 +221,6 @@ void __init_stats()
         struct limine_memmap_entry *entry = memmap->entries[i];
 
         if (entry->type == LIMINE_MEMMAP_USABLE) {
-            kprintf("Memory Map Entry %d Base: %lu\n", i, entry->base);
-            kprintf("Memory Map Entry %d Length: %lu\n", i, entry->length);
             total_memory_bytes += entry->length;
 
             // In this entry, how many pages are there?

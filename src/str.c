@@ -19,6 +19,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <serial.h>
+#include <terminal.h>
 
 /* Reverses the string in str */
 void reverse(char str[], size_t length)
@@ -292,4 +293,5 @@ void kprintf(const char format[], ...)
     va_end(args);
 
     write_serial_str(PORT_COM1, buffer);
+    tprintf(buffer);
 }

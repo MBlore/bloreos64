@@ -1,6 +1,7 @@
 # Copy the relevant files over, including our compiled kernel.
 cp -v bin/bloreos limine.cfg limine/limine-bios.sys \
-      limine/limine-bios-cd.bin limine/limine-uefi-cd.bin iso_root/
+      limine/limine-bios-cd.bin limine/limine-uefi-cd.bin \
+      Font.psf iso_root/
  
 # Create the bootable ISO.
 xorriso -as mkisofs -b limine-bios-cd.bin \
