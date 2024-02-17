@@ -18,7 +18,16 @@
 #ifndef _BLOREOS_TERMINAL_H
 #define _BLOREOS_TERMINAL_H
 
+#include <stdint.h>
+#include <ps2.h>
+
+#define TERM_DEFAULT_FGCOLOR 0xCCCCCC
+#define TERM_CURSOR_COLOR 0xFFFFFF
+
 void term_init();
 void tprintf(const char format[], ...);
+void term_fgcolor(uint32_t color);
+void term_bgcolor(uint32_t color);
+void term_keyevent(KeyEvent_t *ke);
 
 #endif

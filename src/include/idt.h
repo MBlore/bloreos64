@@ -21,9 +21,9 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define KEYBOARD_VECTOR 32
-#define MOUSE_VECTOR 33
-#define NETWORK_VECTOR 34
+#define KEYBOARD_VECTOR 40
+#define MOUSE_VECTOR 41
+#define NETWORK_VECTOR 42
 
 struct idt_entry
 {

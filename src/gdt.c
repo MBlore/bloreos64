@@ -87,5 +87,5 @@ void init_gdt()
 
     _gdt_reload();
 
-    kprintf("Loading GDT at: %X\n", &gdtp);
+    kprintf("Loading GDT at: 0x%X\n", &gdtp);
 }

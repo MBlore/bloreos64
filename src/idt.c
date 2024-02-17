@@ -24,6 +24,7 @@
 #include <string.h>
 #include <lapic.h>
 #include <ps2.h>
+#include <terminal.h>
 
 #define KERNEL_CODE_SEGMENT_OFFSET 0x08 // TODO: Check this
 
@@ -72,10 +73,7 @@ void _handle_keyboard()
     
     KeyEvent_t *pKE = scancode_map[key];
     if (pKE != NULL) {
-        if (pKE->event_type == 0 && pKE->ascii != 0) {
-            // Key down.
-            kprintf("%c", pKE->ascii);
-        }
+        term_keyevent(pKE);
     } else {
         kprintf("Not Found: %d\n", key);
     }
@@ -99,5 +97,5 @@ void idt_init()
     _idt_set_gate(KEYBOARD_VECTOR, _handle_keyboard, 0x8E);
 
     _idt_load();
-    kprintf("Loading IDT at: %X\n", &idtp);
+    kprintf("Loading IDT at: 0x%X\n", &idtp);
 }

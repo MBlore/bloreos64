@@ -44,15 +44,48 @@ struct limine_framebuffer *frame_buffer = NULL;
 uint8_t glyph_padding = 1;
 uint32_t max_rows = 0;
 uint32_t max_cols = 0;
-uint32_t cursor_x = 0;
-uint32_t cursor_y = 0;
 uint32_t glyph_width = 0;
 uint32_t glyph_height = 0;
 bool is_ready = false;
+uint32_t fgcolor = TERM_DEFAULT_FGCOLOR;
+uint32_t bgcolor = 0x0;
+
+// This is the position of where the text output area rendering is up to.
+uint32_t render_x = 0;
+uint32_t render_y = 0;
+
+// This is the position in the input area of where the next key will be written.
+uint32_t input_render_x = 0;
+uint32_t input_render_y = 0;
+
+// The position of where the cursor was last drawn.
+uint32_t last_cursor_x = 0;
+uint32_t last_cursor_y = 0;
+
+char input_str[256];
+
+inline void term_fgcolor(uint32_t color)
+{
+    fgcolor = color;
+}
+
+inline void term_bgcolor(uint32_t color)
+{
+    bgcolor = color;
+}
 
 static inline uint32_t fbindex(uint32_t x, uint32_t y)
 {
     return (y * (frame_buffer->pitch / 4)) + x;
+}
+
+static inline void _clear_screen()
+{
+    // Blank the last row.
+    uint32_t *fb = frame_buffer->address;
+    uint32_t blank_start = fbindex(0, 0);
+    uint32_t blank_end = fbindex(frame_buffer->width, frame_buffer->height);
+    memset(&fb[blank_start], 0x00, (char*)&fb[blank_end] - (char*)&fb[blank_start]);
 }
 
 static inline void _put_pixel(uint32_t x, uint32_t y, uint32_t color)
@@ -77,7 +110,7 @@ void _shift_screen_up()
     // Blank the last row.
     uint32_t blank_start = fbindex(0, frame_buffer->height - glyph_height);
     uint32_t blank_end = fbindex(frame_buffer->width, frame_buffer->height);
-    memset(&fb[blank_start], 0x000000, (char*)&fb[blank_end] - (char*)&fb[blank_start]);
+    memset(&fb[blank_start], 0x00, (char*)&fb[blank_end] - (char*)&fb[blank_start]);
 }
 
 /*
@@ -106,6 +139,116 @@ void _load_font()
     }
 }
 
+/*
+ * Renders a font glyph at the specified pixel location. 
+*/
+void _render_glyph(char ch, uint32_t x, uint32_t y)
+{
+    uint8_t bytesPerGlyph = 1 * font_header->char_height;
+    uint32_t dataIndex = ch * bytesPerGlyph;
+
+    // Render the glyph.
+    for (int glyphRow = 0; glyphRow < font_header->char_height; glyphRow++) {
+        // Read 1 byte for this row.
+        char rowData = glyph_data[dataIndex++];
+
+        for (int bitIndex = 0; bitIndex < 8; bitIndex++) {
+            uint8_t bit_mask = 1 << (bitIndex % 8);
+            if (rowData & bit_mask) {
+                // Foreground.
+                _put_pixel(x + (8 - bitIndex), y + glyphRow, fgcolor);
+            } else {
+                // Background.
+                _put_pixel(x + (8 - bitIndex), y + glyphRow, bgcolor);
+            }
+        }
+    }
+}
+
+/*
+ * Clears the input cursor. 
+*/
+void _clear_cursor()
+{
+    for (uint32_t i = 0; i < glyph_height; i++) {
+        _put_pixel(last_cursor_x, last_cursor_y+i, bgcolor);
+    }
+}
+/*
+ * Renders the input cursor. 
+*/
+void _render_cursor()
+{
+    // Draw a line "|" for the cursor.
+    for (uint32_t i = 0; i < glyph_height; i++) {
+        _put_pixel(input_render_x, input_render_y+i, TERM_CURSOR_COLOR);
+    }
+
+    last_cursor_x = input_render_x;
+    last_cursor_y = input_render_y;
+}
+
+/*
+ * Draws the term input line. Triggered when the text output scrolls or writes a new line char.
+*/
+void _render_input_line()
+{
+    // If the render cursor X is 0, the line hasn't been written to yet.
+    // If it is > 0, the line is being written so we use the line underneath as the input line.
+    input_render_x = 0;
+    input_render_y = render_x > 0 ? render_y + glyph_height : render_y;
+
+    char buffer[] = "cmd> ";
+
+    char *ch = &buffer[0];
+
+    term_fgcolor(0x44AAFF);
+
+    do {
+        _render_glyph(*ch, input_render_x, input_render_y);
+        input_render_x += glyph_width;
+
+        // TODO: Line breaks to next line, aka, multi-line input rendering.
+        ch++;
+    } while(*ch != '\0');
+
+    term_fgcolor(TERM_DEFAULT_FGCOLOR);
+
+    _render_cursor();
+}
+
+/*
+ * Moves the rendering cursor to the next line. If the cursor exceeds the height of the screen,
+ * this triggers a scroll of all lines above. 
+*/
+void _move_to_next_line()
+{
+    if (render_x == 0) {
+        // Blank the input from this line.
+        uint32_t *fb = frame_buffer->address;
+        uint32_t blank_start =fbindex(0, render_y);
+        uint32_t blank_end = fbindex(frame_buffer->width, render_y + glyph_height);
+        memset(&fb[blank_start], 0x00, (char*)&fb[blank_end] - (char*)&fb[blank_start]);
+    }
+
+    render_x = 0;
+    render_y += glyph_height;
+
+    // Detect bottom of screen.
+    if (render_y > frame_buffer->height - glyph_height) {
+        _shift_screen_up();
+        render_y -= glyph_height;
+    }
+
+    // Blank the new line as the input was here.
+    uint32_t *fb = frame_buffer->address;
+    uint32_t blank_start =fbindex(0, render_y);
+    uint32_t blank_end = fbindex(frame_buffer->width, render_y + glyph_height);
+    memset(&fb[blank_start], 0x00, (char*)&fb[blank_end] - (char*)&fb[blank_start]);
+
+    _render_input_line();
+}
+
 void tprintf(const char format[], ...)
 {
     if (!is_ready) {
@@ -119,59 +262,33 @@ void tprintf(const char format[], ...)
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
 
+    // Make sure the line is clear before we start writing in to it.
+    if (render_x == 0) {
+        uint32_t *fb = frame_buffer->address;
+        uint32_t blank_start = fbindex(0, render_y);
+        uint32_t blank_end = fbindex(frame_buffer->width, render_y + glyph_height);
+        memset(&fb[blank_start], 0x00, (char*)&fb[blank_end] - (char*)&fb[blank_start]);
+    }
+    
     // Write text to the frame buffer using our glyph data.
-    uint64_t dataIndex = 0;
     char *ch = &buffer[0];
-    uint8_t bytesPerGlyph = 1 * font_header->char_height;
 
     do {
-        // Point to the glyph in memory according to the char we are currently processing.
-        dataIndex = *ch * bytesPerGlyph;
-
         // Advance the cursor for new lines.
         if (*ch == '\n') {
-            cursor_x = 0;
-            cursor_y += font_header->char_height + glyph_padding;
-
-            // Detect bottom of screen.
-            if (cursor_y > frame_buffer->height - (font_header->char_height + glyph_padding)) {
-                _shift_screen_up();
-                cursor_y -= font_header->char_height + glyph_padding;
-            }
+            _move_to_next_line();
 
             ch++;
             continue;
         }
 
-        // Render the glyph.
-        for (int glyphRow = 0; glyphRow < font_header->char_height; glyphRow++) {
-            // Read 1 byte for this row.
-            char rowData = glyph_data[dataIndex++];
+        _render_glyph(*ch, render_x, render_y);
 
-            for (int bitIndex = 0; bitIndex < 8; bitIndex++) {
-                uint8_t bit_mask = 1 << (bitIndex % 8);
-                if (rowData & bit_mask) {
-                    // Foreground.
-                    _put_pixel(cursor_x + (8 - bitIndex), cursor_y + glyphRow, 0xFFFFFF);
-                } else {
-                    // Background.
-                    _put_pixel(cursor_x + (8 - bitIndex), cursor_y + glyphRow, 0x000000);
-                }
-            }
-        }
+        // Advance the rendering position.
+        render_x += 8 + glyph_padding;
 
-        // Advance the cursor.
-        cursor_x += 8 + glyph_padding;
-
-        if (cursor_x > frame_buffer->width - glyph_width) {
-            cursor_x = 0;
-            cursor_y += glyph_height;
-
-            // Detect bottom of screen.
-            if (cursor_y > frame_buffer->height - glyph_height) {
-                _shift_screen_up();
-                cursor_y -= glyph_height;
-            }
+        if (render_x > frame_buffer->width - glyph_width) {
+            _move_to_next_line();
         }
 
         ch++;
@@ -190,9 +307,60 @@ void term_init()
     glyph_width = 8 + glyph_padding;
     glyph_height = font_header->char_height + glyph_padding;
 
+    kprintf("Font: %dx%d\n", glyph_width - glyph_padding, glyph_height - glyph_padding);
     kprintf("Resolution: %dx%d\n", frame_buffer->width, frame_buffer->height);
     kprintf("BPP: %d\n", frame_buffer->bpp);
     kprintf("Pitch: %d\n", frame_buffer->pitch);
 
+    _render_input_line();
+    
     is_ready = true;
+}
+
+/*
+ * Executes a command from the user input. 
+*/
+void _handle_cmd()
+{
+    if (strcmp(input_str, "hello") == 0) {
+        tprintf("World!\n");
+    } else if (strcmp(input_str, "cls") == 0) {
+        _clear_screen();
+        render_x = render_y = input_render_x = input_render_y = last_cursor_x = last_cursor_y = 0;
+        _render_input_line();
+    } else {
+        tprintf("Unknown command.\n");
+    }
+}
+
+/*
+ * Handles a key event from the keyboard driver. We allow the user to type in to the input area.
+*/
+void term_keyevent(KeyEvent_t *ke)
+{
+    if (ke->event_type == 0 && ke->scan_code == PS2_SCANCODE_ENTER) {
+        // Process the input buffer.
+        tprintf("cmd> ");
+        tprintf(input_str); // Echo the command to the output.
+        tprintf("\n");
+        _handle_cmd();
+
+        input_str[0] = '\0';
+
+        return;
+    }
+
+    if (ke->event_type == 0 && ke->ascii != 0) {
+        // Key down.
+        _render_glyph(ke->ascii, input_render_x, input_render_y);
+        input_render_x += glyph_width;
+
+        // Append to buffer.
+        size_t len = strlen(input_str);
+        input_str[len] = ke->ascii;
+        input_str[len+1] = '\0';
+
+        _clear_cursor();
+        _render_cursor();
+    }
 }

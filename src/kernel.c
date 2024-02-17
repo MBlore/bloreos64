@@ -57,7 +57,10 @@ void kernel_main(void)
     init_serial(PORT_COM1);
     term_init();
 
-    kprintf("BloreOS Alpha\n");
+    term_fgcolor(0x00FF00);
+    kprintf("BloreOS Alpha v0.01\n\n");
+    term_fgcolor(TERM_DEFAULT_FGCOLOR);
+
     report_cpu_details();
     disable_interrupts();
     init_gdt();

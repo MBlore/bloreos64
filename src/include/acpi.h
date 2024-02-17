@@ -22,6 +22,8 @@
 
 void acpi_init();
 
+void _parse_madt(struct sysdesc * desc);
+
 // I/O APIC Structure inside the ICL of the MADT (ID 1).
 struct ioapic {
     char type;

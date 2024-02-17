@@ -280,6 +280,20 @@ size_t strlen(const char *str)
     return -1;
 }
 
+int strcmp(const char *l, const char *r)
+{
+    while (*l && *r) {
+        if (*l != *r) {
+            return -1;
+        }
+
+        l++;
+        r++;
+    }
+
+    return 0;
+}
+
 /*
     Kernel log - currently writes to serial COM1.
 */

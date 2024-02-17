@@ -21,6 +21,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define PS2_SCANCODE_ENTER  28
+
 typedef struct KeyEvent {
     uint8_t scan_code;
     uint8_t event_type;     // 0 = key down, 1 = key up

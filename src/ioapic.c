@@ -56,7 +56,6 @@ uint32_t ioapic_read(struct ioapic *pApic, const uint8_t offset)
 static uint64_t ioapic_max_gsi(struct ioapic *pIOApic)
 {
     uint64_t max = (ioapic_read(pIOApic, IOAPICVER) & 0xFF0000) >> 16;
-    kprintf("Max GSI: %d\n", max);
     return max;
 }
 

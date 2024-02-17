@@ -24,8 +24,33 @@
 #include <str.h>
 
 #define IA32_APIC_BASE_MSR 0x1B
-#define APIC_ID_OFFSET 0x20
-#define APIC_VERSION_OFFSET 0x30
+
+#define LAPIC_APICID        0x20
+#define LAPIC_APICVER       0x30
+#define LAPIC_TPR           0x80  // (Task Priority Register)
+#define LAPIC_EOI           0x0B0
+#define LAPIC_LDR           0x0D0
+#define LAPIC_DFR           0x0E0
+#define LAPIC_SPURIOUS      0x0F0
+#define LAPIC_ESR           0x280
+#define LAPIC_ICRL          0x300
+#define LAPIC_ICRH          0x310
+#define LAPIC_LVT_TMR       0x320
+#define LAPIC_LVT_PERF      0x340
+#define LAPIC_LVT_LINT0     0x350
+#define LAPIC_LVT_LINT1     0x360
+#define LAPIC_LVT_ERR       0x370
+#define LAPIC_TMRINITCNT    0x380
+#define LAPIC_TMRCURRCNT    0x390
+#define LAPIC_TMRDIV        0x3E0
+#define LAPIC_LAST          0x38F
+#define LAPIC_DISABLE       0x10000
+#define LAPIC_SW_ENABLE     0x100
+#define LAPIC_CPUFOCUS      0x200
+#define LAPIC_NMI           (4 << 8)
+#define TMR_PERIODC         0x20000
+#define TMR_BASEDIV         (1 << 20)
+
 
 uint64_t apic_base;
 uint32_t lapic_id;
@@ -55,8 +80,8 @@ void lapic_init()
 
     kprintf("LAPIC Base: %X\n", apic_base);
 
-    lapic_id = lapic_read(APIC_ID_OFFSET);
-    uint32_t apic_version = lapic_read(APIC_VERSION_OFFSET);
+    lapic_id = lapic_read(LAPIC_APICID);
+    uint32_t apic_version = lapic_read(LAPIC_APICVER);
 
     kprintf("LAPIC ID: %d\n", lapic_id);
     kprintf("LAPIC Version: %d\n", apic_version);
@@ -69,8 +94,7 @@ void lapic_init()
     kprintf("MSR APIC Enabled: %d\n", apic_flags);
 }
 
-#define EOI_REGISTER_OFFSET 0x0B0
 void lapic_eoi()
 {
-    lapic_write(EOI_REGISTER_OFFSET, 0);   
+    lapic_write(LAPIC_EOI, 0);
 }

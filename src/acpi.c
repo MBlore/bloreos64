@@ -32,7 +32,8 @@
 #define ICS_ID_ISO 2
 
 // Signature strings
-#define SDT_APIC_SIG "APIC"
+#define SDT_APIC_SIG    "APIC"
+#define SDT_APIC_HPET   "HPET"
 
 struct limine_rsdp_request rsdp_request = {
     .id = LIMINE_RSDP_REQUEST,
@@ -99,6 +100,30 @@ struct madt {
     uint32_t flags;
 } __attribute__((packed));
 
+struct address_structure
+{
+    uint8_t address_space_id;    // 0 - system memory, 1 - system I/O
+    uint8_t register_bit_width;
+    uint8_t register_bit_offset;
+    uint8_t reserved;
+    uint64_t address;
+} __attribute__((packed));
+
+struct hpet
+{
+    struct sysdesc desc;
+    uint8_t hardware_rev_id;
+    uint8_t comparator_count:5;
+    uint8_t counter_size:1;
+    uint8_t reserved:1;
+    uint8_t legacy_replacement:1;
+    uint16_t pci_vendor_id;
+    struct address_structure address;
+    uint8_t hpet_number;
+    uint16_t minimum_tick;
+    uint8_t page_protection;
+} __attribute__((packed));
+
 struct rsdp *rsdp = NULL;
 struct rsdt *rsdt = NULL;
 struct madt *pMadt = NULL;
@@ -125,6 +150,7 @@ void add_iso(struct iso *pIso)
     for (int i = 0; i < ISO_LIST_LEN; i++) {
         if (iso_list[i] == NULL) {
             iso_list[i] = pIso;
+            kprintf("ISO Override: IRQ %d -> GSI %d\n", pIso->irq_source, pIso->gsi);
             return;
         }
     }
@@ -157,63 +183,64 @@ void acpi_init()
         rsdt = (struct rsdt*)((uint64_t)rsdp->rsdt_addr + vmm_higher_half_offset);
     }
 
-    kprintf("RSDT Sig: %c%c%c%c\n", rsdt->signature[0], rsdt->signature[1], rsdt->signature[2], rsdt->signature[3]);
-    kprintf("RSDT Length: %d\n", rsdt->length);
-
     // 36 bytes in fields up to entries, x bytes per entry.
     rsdt_entry_count = (rsdt->length - 36) / (xsdt_enabled ? 8 : 4);
-    kprintf("RSDT Entries Count: %d\n", rsdt_entry_count);
-
-    kprintf("RSDT Addr: 0x%X\n", rsdt);
 
     // Walk the RSDT entries, looking for the APIC entry.
     for (uint32_t i = 0; i < rsdt_entry_count; i++) {
         // Report entry.
         struct sysdesc *desc = (struct sysdesc*)((uint64_t)rsdt->entries[i] + vmm_higher_half_offset);
-        kprintf("RSDT Entry %d Sig: %c%c%c%c\n", i, desc->signature[0], desc->signature[1], desc->signature[2], desc->signature[3]);
-        kprintf("RSDT Entry %d Length: %d\n", i, desc->length);
 
-        if (memcmp(desc->signature, SDT_APIC_SIG, 4) != 0) {
-            continue;
+        if (memcmp(desc->signature, SDT_APIC_HPET, 4) == 0) {
+            _parse_hpet(desc);
         }
-        
-        // Found the APIC entry. Parse this MADT structure to find the I/O APIC address.
-        pMadt = (struct madt*)desc;
-        
-        kprintf("Local APIC Addr: 0x%X\n", pMadt->lapic_addr);              
-        kprintf("Start MADT: 0x%X\n", pMadt);
-        kprintf("MADT Length: %d\n", (int)pMadt->desc.length);
 
-        // Get a pointer to the beginning of the interrupt
-        // control structure list which is located at the end of the MADT.
-        char *pICLStart = (char*)pMadt + sizeof(struct madt);
-        char *pICLItem = pICLStart;
-
-        // Walk the ICL list.
-        do {
-            kprintf("ICL Entry ID: %d\n", (int)*pICLItem);
-            kprintf("ICL Entry Len: %d\n", (int)pICLItem[1]);
-
-            // Check the type, we're looking for the I/O APIC.
-            if (*pICLItem == ICS_ID_IO_APIC) {
-                kprintf("Found IO/APIC entry.\n");
-                struct ioapic *pIOApic = (struct ioapic*)pICLItem;
-                add_ioapic(pIOApic);
-
-                kprintf("IO APIC ID: %d\n", (int)pIOApic->ioapic_id);
-                kprintf("IO APIC Addr: 0x%X\n", pIOApic->ioapic_addr);
-                kprintf("IO APIC GSI Base: %d\n", pIOApic->gsi_base);
-            } else if (*pICLItem == ICS_ID_ISO) {
-                kprintf("Found ISO entry.\n");
-                struct iso *pIso = (struct iso*)pICLItem;
-                add_iso(pIso);
-            }
-
-            // Move past this entire structure (length is at 2nd byte).
-            pICLItem += pICLItem[1];
-        } while (pICLItem - pICLStart < pMadt->desc.length);
+        if (memcmp(desc->signature, SDT_APIC_SIG, 4) == 0) {
+            _parse_madt(desc);
+        }
     }
 
     kprintf("ACPI initialized.\n");
 }
 
+void _parse_hpet(struct sysdesc *desc)
+{
+
+}
+
+void _parse_madt(struct sysdesc *desc)
+{
+    // Found the APIC entry. Parse this MADT structure to find the I/O APIC address.
+    pMadt = (struct madt *)desc;
+
+    kprintf("Start MADT: 0x%X\n", pMadt);
+    kprintf("MADT Length: %d\n", (int)pMadt->desc.length);
+
+    // Get a pointer to the beginning of the interrupt
+    // control structure list which is located at the end of the MADT.
+    char *pICLStart = (char *)pMadt + sizeof(struct madt);
+    char *pICLItem = pICLStart;
+
+    // Walk the ICL list.
+    do
+    {
+        // Check the type, we're looking for the I/O APIC.
+        if (*pICLItem == ICS_ID_IO_APIC)
+        {
+            struct ioapic *pIOApic = (struct ioapic *)pICLItem;
+            add_ioapic(pIOApic);
+
+            kprintf("IO APIC ID: %d\n", (int)pIOApic->ioapic_id);
+            kprintf("IO APIC Addr: 0x%X\n", pIOApic->ioapic_addr);
+            kprintf("IO APIC GSI Base: %d\n", pIOApic->gsi_base);
+        }
+        else if (*pICLItem == ICS_ID_ISO)
+        {
+            struct iso *pIso = (struct iso *)pICLItem;
+            add_iso(pIso);
+        }
+
+        // Move past this entire structure (length is at 2nd byte).
+        pICLItem += pICLItem[1];
+    } while (pICLItem - pICLStart < pMadt->desc.length);
+}
