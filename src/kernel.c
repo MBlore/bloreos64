@@ -32,6 +32,7 @@
 #include <acpi.h>
 #include <ioapic.h>
 #include <terminal.h>
+#include <queue.h>
 
 #include "kernel.h"
 
@@ -84,6 +85,8 @@ void kernel_main(void)
     acpi_init();
 
     ps2_init();
+
+    
 
     while(1) {
         // Spin forever.

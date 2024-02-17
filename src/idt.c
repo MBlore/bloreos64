@@ -69,18 +69,17 @@ void _handle_keyboard()
     isr_save();
 
     uint8_t key = ps2_read_no_wait();
-    //kprintf("Key: %d\n", key);
+    kprintf("Key: %d\n", key);
     
     KeyEvent_t *pKE = scancode_map[key];
     if (pKE != NULL) {
-        term_keyevent(pKE);
+        //term_keyevent(pKE);
     } else {
         kprintf("Not Found: %d\n", key);
     }
 
     lapic_eoi();
 
-    // Restore stuff.
     isr_restore();
 }
 

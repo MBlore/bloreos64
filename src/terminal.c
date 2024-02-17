@@ -50,17 +50,17 @@ bool is_ready = false;
 uint32_t fgcolor = TERM_DEFAULT_FGCOLOR;
 uint32_t bgcolor = 0x0;
 
-// This is the position of where the text output area rendering is up to.
+// Position of where the text output area rendering is up to.
 uint32_t render_x = 0;
 uint32_t render_y = 0;
 
-// This is the position in the input area of where the next key will be written.
+// Position in the input area of where the next key will be written.
 uint32_t input_render_x = 0;
 uint32_t input_render_y = 0;
 
-// The position of where the cursor was last drawn.
-uint32_t last_cursor_x = 0;
-uint32_t last_cursor_y = 0;
+// Position of where the cursor is drawn.
+uint32_t cursor_x = 0;
+uint32_t cursor_y = 0;
 
 char input_str[256];
 
@@ -171,7 +171,7 @@ void _render_glyph(char ch, uint32_t x, uint32_t y)
 void _clear_cursor()
 {
     for (uint32_t i = 0; i < glyph_height; i++) {
-        _put_pixel(last_cursor_x, last_cursor_y+i, bgcolor);
+        _put_pixel(cursor_x, cursor_y+i, bgcolor);
     }
 }
 /*
@@ -184,8 +184,8 @@ void _render_cursor()
         _put_pixel(input_render_x, input_render_y+i, TERM_CURSOR_COLOR);
     }
 
-    last_cursor_x = input_render_x;
-    last_cursor_y = input_render_y;
+    cursor_x = input_render_x;
+    cursor_y = input_render_y;
 }
 
 /*
@@ -250,7 +250,7 @@ void _move_to_next_line()
 }
 
 void tprintf(const char format[], ...)
-{
+{   
     if (!is_ready) {
         return;
     }
@@ -326,7 +326,7 @@ void _handle_cmd()
         tprintf("World!\n");
     } else if (strcmp(input_str, "cls") == 0) {
         _clear_screen();
-        render_x = render_y = input_render_x = input_render_y = last_cursor_x = last_cursor_y = 0;
+        render_x = render_y = input_render_x = input_render_y = cursor_x = cursor_y = 0;
         _render_input_line();
     } else {
         tprintf("Unknown command.\n");

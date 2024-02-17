@@ -15,25 +15,24 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_ATOMIC_H
-#define _BLOREOS_ATOMIC_H
+#ifndef _BLOREOS_QUEUE_H
+#define _BLOREOS_QUEUE_H
 
-#include <stdint.h>
+#include <stdbool.h>
+#include <atomic.h>
 
+// Circular queue.
 typedef struct {
-    uint8_t lock;
-} spinlock_t;
+    uint32_t read_i;
+    uint32_t write_i;
+    uint32_t *buff;
+    uint32_t len;
+    uint32_t num_items;
+    spinlock_t lock;
+} __attribute__((packed)) CQueue_t;
 
-static inline void spinlock_lock(spinlock_t *pLock)
-{
-    while (__sync_lock_test_and_set(&pLock->lock, 1)) {
-        // Idle until locked.
-    }
-}
-
-static inline void spinlock_unlock(spinlock_t *pLock)
-{
-    __sync_lock_release(&pLock->lock);
-}
+CQueue_t*   cqueue_create(uint32_t len);
+bool        cqueue_write(CQueue_t *q, uint32_t val);
+uint32_t    cqueue_read(CQueue_t *q);
 
 #endif
