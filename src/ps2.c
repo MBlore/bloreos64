@@ -259,6 +259,9 @@ void ps2_init()
     // Write back the confing.
     ps2_write_config(config);
 
+    // Setup the IRQ1 redirect in the I/O APIC to come to our keyboard vector in the IDT.
+    ioapic_redirect_irq(bsp_lapic_id, KEYBOARD_VECTOR, 1, true);
+
     // Enable the keyboard.
     ps2_write(PORT_PS2_STATUSCMD, 0xAE);
 
@@ -266,9 +269,6 @@ void ps2_init()
     if ((config & (1 << 5)) != 0) {
         ps2_write(PORT_PS2_STATUSCMD, 0xA8);
     }
-
-    // Setup the IRQ1 redirect in the I/O APIC to come to our keyboard vector in the IDT.
-    ioapic_redirect_irq(bsp_lapic_id, KEYBOARD_VECTOR, 1, true);
 
     // Setup the scancode mapping.
     for (uint64_t i = 0; i < sizeof(key_map) / sizeof(KeyEvent_t); i++) {

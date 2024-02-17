@@ -21,7 +21,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define PS2_SCANCODE_ENTER  28
+#define PS2_KEYDOWN             0
+#define PS2_KEYUP               1
+#define PS2_SCANCODE_BACKSPACE  14
+#define PS2_SCANCODE_ENTER      28
 
 typedef struct KeyEvent {
     uint8_t scan_code;

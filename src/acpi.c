@@ -156,58 +156,6 @@ void add_iso(struct iso *pIso)
     }
 }
 
-/*
- * The ACPI init will look for the I/O APIC address to later setup IRQ redirections.
- * We start at the RSDP pointer from Limine, which leads us to the table RSDT.
- * The RSDT has entries to various info structures. We look for the MADT in these entries
- * which contains a list of more structures. Finally, in this list of structures we find
- * the I/O APIC structure with the address of it.
-*/
-void acpi_init()
-{
-    bool xsdt_enabled = false;
-
-    kprintf("Initialzing ACPI...\n");
-
-    rsdp = rsdp_request.response->address;
-    kprintf("RSDP Revision: %d\n", rsdp->revision);
-
-    if (rsdp->revision >= 2) {
-        xsdt_enabled = true;
-        kprintf("XSDT is available but not yet supported.\n");
-        asm("hlt");
-        __builtin_unreachable();
-        //rsdt = (struct xsdt*)((uint64_t)rsdp->xsdt_addr + vmm_higher_half_offset);
-    } else {
-        kprintf("XSDT is not available.\n");
-        rsdt = (struct rsdt*)((uint64_t)rsdp->rsdt_addr + vmm_higher_half_offset);
-    }
-
-    // 36 bytes in fields up to entries, x bytes per entry.
-    rsdt_entry_count = (rsdt->length - 36) / (xsdt_enabled ? 8 : 4);
-
-    // Walk the RSDT entries, looking for the APIC entry.
-    for (uint32_t i = 0; i < rsdt_entry_count; i++) {
-        // Report entry.
-        struct sysdesc *desc = (struct sysdesc*)((uint64_t)rsdt->entries[i] + vmm_higher_half_offset);
-
-        if (memcmp(desc->signature, SDT_APIC_HPET, 4) == 0) {
-            _parse_hpet(desc);
-        }
-
-        if (memcmp(desc->signature, SDT_APIC_SIG, 4) == 0) {
-            _parse_madt(desc);
-        }
-    }
-
-    kprintf("ACPI initialized.\n");
-}
-
-void _parse_hpet(struct sysdesc *desc)
-{
-
-}
-
 void _parse_madt(struct sysdesc *desc)
 {
     // Found the APIC entry. Parse this MADT structure to find the I/O APIC address.
@@ -244,3 +192,57 @@ void _parse_madt(struct sysdesc *desc)
         pICLItem += pICLItem[1];
     } while (pICLItem - pICLStart < pMadt->desc.length);
 }
+
+/*
+ * The ACPI init will look for the I/O APIC address to later setup IRQ redirections.
+ * We start at the RSDP pointer from Limine, which leads us to the table RSDT.
+ * The RSDT has entries to various info structures. We look for the MADT in these entries
+ * which contains a list of more structures. Finally, in this list of structures we find
+ * the I/O APIC structure with the address of it.
+*/
+void acpi_init()
+{
+    bool xsdt_enabled = false;
+
+    kprintf("Initialzing ACPI...\n");
+
+    rsdp = rsdp_request.response->address;
+    kprintf("RSDP Revision: %d\n", rsdp->revision);
+
+    if (rsdp->revision >= 2) {
+        xsdt_enabled = true;
+        kprintf("XSDT is available but not yet supported.\n");
+        asm("hlt");
+        __builtin_unreachable();
+        //rsdt = (struct xsdt*)((uint64_t)rsdp->xsdt_addr + vmm_higher_half_offset);
+    } else {
+        kprintf("XSDT is not available.\n");
+        rsdt = (struct rsdt*)((uint64_t)rsdp->rsdt_addr + vmm_higher_half_offset);
+    }
+
+    // 36 bytes in fields up to entries, x bytes per entry.
+    rsdt_entry_count = (rsdt->length - 36) / (xsdt_enabled ? 8 : 4);
+
+    // Walk the RSDT entries, looking for the APIC entry.
+    for (uint32_t i = 0; i < rsdt_entry_count; i++) {
+        // Report entry.
+        struct sysdesc *desc = (struct sysdesc*)((uint64_t)rsdt->entries[i] + vmm_higher_half_offset);
+
+        if (memcmp(desc->signature, SDT_APIC_HPET, 4) == 0) {
+            //_parse_hpet(desc);
+        }
+
+        if (memcmp(desc->signature, SDT_APIC_SIG, 4) == 0) {
+            _parse_madt(desc);
+        }
+    }
+
+    kprintf("ACPI initialized.\n");
+}
+
+/*
+void _parse_hpet(struct sysdesc *desc)
+{
+    kprintf("Parsing HPET");
+}
+*/

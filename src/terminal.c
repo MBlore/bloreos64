@@ -338,7 +338,7 @@ void _handle_cmd()
 */
 void term_keyevent(KeyEvent_t *ke)
 {
-    if (ke->event_type == 0 && ke->scan_code == PS2_SCANCODE_ENTER) {
+    if (ke->event_type == PS2_KEYDOWN && ke->scan_code == PS2_SCANCODE_ENTER) {
         // Process the input buffer.
         tprintf("cmd> ");
         tprintf(input_str); // Echo the command to the output.
@@ -348,6 +348,27 @@ void term_keyevent(KeyEvent_t *ke)
         input_str[0] = '\0';
 
         return;
+    }
+
+    if (ke->event_type == PS2_KEYDOWN && ke->scan_code == PS2_SCANCODE_BACKSPACE) {
+        if (input_str[0] != '\0') {
+            input_str[strlen(input_str)-1] = '\0';
+
+            _clear_cursor();
+
+            // Clear the glyph.
+            uint32_t *fb = frame_buffer->address;
+            for (uint32_t y = 0; y < glyph_height; y++) {
+                uint32_t blank_start = fbindex(input_render_x - glyph_width, input_render_y+y);
+                uint32_t blank_end = fbindex(input_render_x, input_render_y+y);
+                memset(&fb[blank_start], 0, (char*)&fb[blank_end] - (char*)&fb[blank_start]);
+            }
+
+            input_render_x -= glyph_width;
+
+            _render_cursor();
+            return;
+        }
     }
 
     if (ke->event_type == 0 && ke->ascii != 0) {
