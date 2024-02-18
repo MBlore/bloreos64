@@ -21,9 +21,11 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define KEYBOARD_VECTOR 40
-#define MOUSE_VECTOR 41
-#define NETWORK_VECTOR 42
+// Reserved IDT vectors.
+#define TIMER_VECTOR 32
+#define KEYBOARD_VECTOR 33
+#define MOUSE_VECTOR 34
+#define NETWORK_VECTOR 35
 
 struct idt_entry
 {

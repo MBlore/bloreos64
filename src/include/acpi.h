@@ -43,9 +43,49 @@ struct iso {
     uint16_t flags;
 } __attribute__((packed));
 
+// System Description Table Header (DESCRIPTION_HEADER)
+struct sysdesc {
+    char signature[4];
+    uint32_t length;
+    uint8_t revision;
+    uint8_t checksum;
+    char oem_id[6];
+    char oem_table_id[8];
+    uint32_t oem_revision;
+    uint32_t creator_id;
+    uint32_t creator_revision;
+} __attribute__((packed));
+
+struct address_structure
+{
+    uint8_t address_space_id;    // 0 - system memory, 1 - system I/O
+    uint8_t register_bit_width;
+    uint8_t register_bit_offset;
+    uint8_t reserved;
+    uint64_t address;
+} __attribute__((packed));
+
+// HPET table (High Precision Event Timer).
+struct hpet
+{
+    struct sysdesc desc;
+    uint8_t hardware_rev_id;
+    uint8_t comparator_count:5;
+    uint8_t counter_size:1;
+    uint8_t reserved:1;
+    uint8_t legacy_replacement:1;
+    uint16_t pci_vendor_id;
+    struct address_structure address;
+    uint8_t hpet_number;
+    uint16_t minimum_tick;
+    uint8_t page_protection;
+} __attribute__((packed));
+
 #define IOAPIC_LIST_LEN 32
 #define ISO_LIST_LEN 128
+
 extern struct ioapic *ioapic_list[];
 extern struct iso *iso_list[];
+extern struct hpet *hpet;
 
 #endif

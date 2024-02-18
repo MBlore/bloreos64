@@ -15,9 +15,6 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-/*
-    Everything to manage the IDT.
-*/
 #include <idt.h>
 #include <cpu.h>
 #include <str.h>
@@ -27,6 +24,7 @@
 #include <terminal.h>
 #include <kernel.h>
 #include <serial.h>
+#include <hpet.h>
 
 #define KERNEL_CODE_SEGMENT_OFFSET 0x08 // TODO: Check this
 
@@ -57,8 +55,6 @@ void _idt_set_gate(int vector, void *handler, uint8_t flags)
     idt[vector].flags = flags;
     idt[vector].ist = 0;
     idt[vector].reserved = 0;
-
-    kprintf("IDT Set Gate: %d -> 0x%X\n", vector, handler);
 }
 
 #pragma GCC diagnostic push
@@ -70,7 +66,16 @@ void _handle_interrupt()
 }
 #pragma GCC diagnostic pop
 
-/**
+void _handle_timer()
+{
+    isr_save();
+    kprintf("Tick!\n");
+    lapic_eoi();
+    hpet_ack();
+    isr_restore();
+}
+
+/*
  * Called from the isr.S handler function.
 */
 void _handle_keyboard()
@@ -94,6 +99,7 @@ void idt_init()
     }
 
     // Device gates.
+    _idt_set_gate(TIMER_VECTOR, _handle_timer, 0x8E);
     _idt_set_gate(KEYBOARD_VECTOR, ISR_Handler, 0x8E);
 
     _idt_load();

@@ -33,6 +33,7 @@
 #include <ioapic.h>
 #include <terminal.h>
 #include <queue.h>
+#include <hpet.h>
 #include "kernel.h"
 
 CQueue_t *q_keyboard;
@@ -78,6 +79,8 @@ void kernel_main(void)
     cpu_init();
     lapic_init();
     acpi_init();
+
+    hpet_init();
 
     q_keyboard = cqueue_create(200);
     ps2_init();

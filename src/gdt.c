@@ -75,12 +75,12 @@ void init_gdt()
     // Null segment.
     set_gdt_entry(0, 0, 0, 0, 0);
 
-    // Code segment.
+    // Code segment (0x08).
     // 0x9A = present, executable, readable.
     // 0x20 = 64-bit code segment granularity.
     set_gdt_entry(1, 0, 0xFFFFFFFF, 0x9A, 0x20);
 
-    // Data segment.
+    // Data segment (0x10).
     // 0x92 = present, writable.
     // 0x00 = 4K granularity, 32-bit.
     set_gdt_entry(2, 0, 0xFFFFFFFF, 0x92, 0x00);

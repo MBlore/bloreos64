@@ -80,19 +80,6 @@ struct xsdt {
     uint64_t entries[];             // 64-bit entries.
 } __attribute__((packed));
 
-// System Description Table Header (DESCRIPTION_HEADER)
-struct sysdesc {
-    char signature[4];
-    uint32_t length;
-    uint8_t revision;
-    uint8_t checksum;
-    char oem_id[6];
-    char oem_table_id[8];
-    uint32_t oem_revision;
-    uint32_t creator_id;
-    uint32_t creator_revision;
-} __attribute__((packed));
-
 // Multiple APIC Description Table (MADT)
 struct madt {
     struct sysdesc desc;
@@ -100,33 +87,10 @@ struct madt {
     uint32_t flags;
 } __attribute__((packed));
 
-struct address_structure
-{
-    uint8_t address_space_id;    // 0 - system memory, 1 - system I/O
-    uint8_t register_bit_width;
-    uint8_t register_bit_offset;
-    uint8_t reserved;
-    uint64_t address;
-} __attribute__((packed));
-
-struct hpet
-{
-    struct sysdesc desc;
-    uint8_t hardware_rev_id;
-    uint8_t comparator_count:5;
-    uint8_t counter_size:1;
-    uint8_t reserved:1;
-    uint8_t legacy_replacement:1;
-    uint16_t pci_vendor_id;
-    struct address_structure address;
-    uint8_t hpet_number;
-    uint16_t minimum_tick;
-    uint8_t page_protection;
-} __attribute__((packed));
-
 struct rsdp *rsdp = NULL;
 struct rsdt *rsdt = NULL;
 struct madt *pMadt = NULL;
+struct hpet *hpet = NULL;
 uint32_t rsdt_entry_count;
 
 /*
@@ -229,20 +193,15 @@ void acpi_init()
         struct sysdesc *desc = (struct sysdesc*)((uint64_t)rsdt->entries[i] + vmm_higher_half_offset);
 
         if (memcmp(desc->signature, SDT_APIC_HPET, 4) == 0) {
-            //_parse_hpet(desc);
+            hpet = (struct hpet*)desc;
+            continue;
         }
 
         if (memcmp(desc->signature, SDT_APIC_SIG, 4) == 0) {
             _parse_madt(desc);
+            continue;
         }
     }
 
     kprintf("ACPI initialized.\n");
 }
-
-/*
-void _parse_hpet(struct sysdesc *desc)
-{
-    kprintf("Parsing HPET");
-}
-*/
