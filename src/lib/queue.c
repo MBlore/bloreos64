@@ -62,7 +62,6 @@ bool cqueue_write(CQueue_t *q, uint32_t val)
 
     q->buff[q->write_i] = val;
     q->write_i++;
-    q->num_items++;
 
     if (q->write_i == q->len) {
         // Wrap around.
@@ -70,6 +69,8 @@ bool cqueue_write(CQueue_t *q, uint32_t val)
     }
 
     spinlock_unlock(&q->lock);
+
+    q->num_items++;
 
     return true;
 }
@@ -91,12 +92,13 @@ uint32_t cqueue_read(CQueue_t *q)
     uint32_t val = q->buff[q->read_i];
 
     q->read_i++;
-    q->num_items--;
 
     if (q->read_i == q->len) {
         // Wrap around.
         q->read_i = 0;
     }
+
+    q->num_items--;
 
     spinlock_unlock(&q->lock);
 

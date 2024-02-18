@@ -21,13 +21,13 @@
 #include <stdbool.h>
 #include <atomic.h>
 
-// Circular queue.
+// Circular queue (volatile properties as ISR's can use queues).
 typedef struct {
-    uint32_t read_i;
-    uint32_t write_i;
+    volatile uint32_t read_i;
+    volatile uint32_t write_i;
     uint32_t *buff;
     uint32_t len;
-    uint32_t num_items;
+    volatile uint32_t num_items;
     spinlock_t lock;
 } __attribute__((packed)) CQueue_t;
 

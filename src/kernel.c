@@ -33,19 +33,14 @@
 #include <ioapic.h>
 #include <terminal.h>
 #include <queue.h>
-
 #include "kernel.h"
+
+CQueue_t *q_keyboard;
 
 // Set the base revision to 1, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
 // See specification for further info.
-
 LIMINE_BASE_REVISION(1)
-
-// The Limine requests can be placed anywhere, but it is important that
-// the compiler does not optimise them away, so, in C, they should
-// NOT be made "static".
-
 
 
 void kernel_main(void)
@@ -84,12 +79,24 @@ void kernel_main(void)
     lapic_init();
     acpi_init();
 
+    q_keyboard = cqueue_create(200);
     ps2_init();
 
-    
 
-    while(1) {
-        // Spin forever.
+    while(1) {        
+        // Check if we have any keyboard events.
+        if (q_keyboard->num_items > 0) {
+            // We can't let an ISR interrupt the read which would double lock inside
+            // the cqueue. Because the keyboard ISR puts items in this queue using its lock.
+            disable_interrupts();
+            uint32_t scanCode = cqueue_read(q_keyboard);
+            enable_interrupts();
+
+            KeyEvent_t *pKE = scancode_map[scanCode];
+            if (pKE != NULL) {
+                term_keyevent(pKE);
+            }
+        }
     }
 
     hcf();

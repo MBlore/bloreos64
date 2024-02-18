@@ -1,0 +1,9 @@
+ISR's have interrupts disabled on entry.
+Next ISR doesnt fire until the ISR's has been ACK'd.
+
+Interrupt prio:
+    cr8 is compared with bits 4-8 of the interrupt vector, and if cr8 is less, the interrupt passes.
+    0 lowest prio, 15 highest.
+    If cr8==15 then no external IRQs are executed
+    cr8 is only avaliable on x86-64
+    Otherwise you can use the LAPIC's taskPriority

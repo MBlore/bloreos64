@@ -25,6 +25,7 @@
 #include <lapic.h>
 #include <ps2.h>
 #include <terminal.h>
+#include <kernel.h>
 
 #define KERNEL_CODE_SEGMENT_OFFSET 0x08 // TODO: Check this
 
@@ -69,17 +70,10 @@ void _handle_keyboard()
     isr_save();
 
     uint8_t key = ps2_read_no_wait();
-    kprintf("Key: %d\n", key);
     
-    KeyEvent_t *pKE = scancode_map[key];
-    if (pKE != NULL) {
-        //term_keyevent(pKE);
-    } else {
-        kprintf("Not Found: %d\n", key);
-    }
-
+    cqueue_write(q_keyboard, key);
+    
     lapic_eoi();
-
     isr_restore();
 }
 

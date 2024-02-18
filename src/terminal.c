@@ -23,6 +23,7 @@
 #include <str.h>
 #include <mem.h>
 #include <stdbool.h>
+#include <cpu.h>
 
 typedef struct {
     uint16_t magic;         // Magic bytes for identification.
@@ -250,7 +251,7 @@ void _move_to_next_line()
 }
 
 void tprintf(const char format[], ...)
-{   
+{
     if (!is_ready) {
         return;
     }
