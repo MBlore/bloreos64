@@ -21,7 +21,6 @@
 #include <stdint.h>
 
 void lapic_init();
-
 void lapic_eoi();
 
 extern uint32_t lapic_id;

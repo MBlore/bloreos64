@@ -26,6 +26,7 @@
 #include <ps2.h>
 #include <terminal.h>
 #include <kernel.h>
+#include <serial.h>
 
 #define KERNEL_CODE_SEGMENT_OFFSET 0x08 // TODO: Check this
 
@@ -34,6 +35,8 @@
 
 struct idt_entry idt[256];
 struct idt_ptr idtp;
+
+extern void ISR_Handler(void);
 
 void _idt_load()
 {
@@ -54,6 +57,8 @@ void _idt_set_gate(int vector, void *handler, uint8_t flags)
     idt[vector].flags = flags;
     idt[vector].ist = 0;
     idt[vector].reserved = 0;
+
+    kprintf("IDT Set Gate: %d -> 0x%X\n", vector, handler);
 }
 
 #pragma GCC diagnostic push
@@ -65,16 +70,18 @@ void _handle_interrupt()
 }
 #pragma GCC diagnostic pop
 
+/**
+ * Called from the isr.S handler function.
+*/
 void _handle_keyboard()
 {
-    isr_save();
+    write_serial_str(PORT_COM1, "Hello World");
 
     uint8_t key = ps2_read_no_wait();
     
     cqueue_write(q_keyboard, key);
     
     lapic_eoi();
-    isr_restore();
 }
 
 void idt_init()
@@ -87,7 +94,7 @@ void idt_init()
     }
 
     // Device gates.
-    _idt_set_gate(KEYBOARD_VECTOR, _handle_keyboard, 0x8E);
+    _idt_set_gate(KEYBOARD_VECTOR, ISR_Handler, 0x8E);
 
     _idt_load();
     kprintf("Loading IDT at: 0x%X\n", &idtp);

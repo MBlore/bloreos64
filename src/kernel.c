@@ -86,6 +86,7 @@ void kernel_main(void)
     while(1) {        
         // Check if we have any keyboard events.
         if (q_keyboard->num_items > 0) {
+
             // We can't let an ISR interrupt the read which would double lock inside
             // the cqueue. Because the keyboard ISR puts items in this queue using its lock.
             disable_interrupts();
@@ -96,6 +97,7 @@ void kernel_main(void)
             if (pKE != NULL) {
                 term_keyevent(pKE);
             }
+            
         }
     }
 

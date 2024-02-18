@@ -122,7 +122,8 @@ obj/%.asm.o: src/%.asm GNUmakefile
 	mkdir -p "$$(dirname $@)"
 	nasm $(NASMFLAGS) $< -o $@
 
-bin/code.asm: bin/$(KERNEL) GNUmakefile
+.PHONY: dump
+dump:
 	objdump -d bin/bloreos > bin/code.asm
 
 deploy:
