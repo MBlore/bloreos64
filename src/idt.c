@@ -69,9 +69,10 @@ void _handle_interrupt()
 void _handle_timer()
 {
     isr_save();
-    kprintf("Tick!\n");
-    lapic_eoi();
+    // TODO: Why is this not writing more than once :(
+    cqueue_write(q_keyboard, 47);
     hpet_ack();
+    lapic_eoi();
     isr_restore();
 }
 
@@ -80,8 +81,6 @@ void _handle_timer()
 */
 void _handle_keyboard()
 {
-    write_serial_str(PORT_COM1, "Hello World");
-
     uint8_t key = ps2_read_no_wait();
     
     cqueue_write(q_keyboard, key);

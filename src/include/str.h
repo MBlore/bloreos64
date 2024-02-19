@@ -33,5 +33,6 @@ int strcmp(const char *l, const char *r);
 int snprintf(char buffer[], size_t size, const char format[], ...);
 int vsnprintf(char buffer[], size_t size, const char format[], va_list args);
 void kprintf(const char format[], ...);
+void sprint_binary(char s[], uint8_t ch);
 
 #endif

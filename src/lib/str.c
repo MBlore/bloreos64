@@ -310,3 +310,17 @@ void kprintf(const char format[], ...)
 
     tprintf(buffer);
 }
+
+/*
+ * Prints the specified uint8_t to a char buffer in binary form.
+ * buff must be at least 9 bytes.
+ * Bits printed right-to-left, 765433210.
+*/
+void sprint_binary(char buff[], uint8_t ch)
+{
+    for (int i = 0; i < 8; i++) {
+        buff[7-i] = ch & (1 << i) ? '1' : '0';
+    }
+
+    buff[8] = '\0';
+}

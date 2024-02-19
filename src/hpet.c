@@ -36,12 +36,12 @@ uint64_t *base_addr = 0;
 
 uint64_t* _timer_config_reg(uint32_t n)
 {
-    return (uint64_t*)((char*)base_addr + (0x100 + 0x20 * n));
+    return (uint64_t*)((char*)base_addr + (0x100 + (0x20 * n)));
 }
 
 uint64_t* _timer_comparator_reg(uint32_t n)
 {
-    return (uint64_t*)((char*)base_addr + (0x108 + 0x20 * n));
+    return (uint64_t*)((char*)base_addr + (0x108 + (0x20 * n)));
 }
 
 void hpet_init()
@@ -50,6 +50,8 @@ void hpet_init()
 
     kprintf("HPET Comparator Count: %d\n", hpet->comparator_count);
     kprintf("HPET Counter Size: %d\n", hpet->counter_size);
+    kprintf("HPET Min Tick: %d\n", hpet->minimum_tick);
+    kprintf("HPET Legacy Replacement: %d\n", hpet->legacy_replacement);
 
     base_addr = (uint64_t*)(hpet->address.address + vmm_higher_half_offset);
     struct hpet_regs *regs = (struct hpet_regs*)base_addr;
@@ -73,23 +75,37 @@ void hpet_init()
     kprintf("HPET Timer 0 - 64-Bit Mode: %d\n", *timer_config >> 5 & 1);
 
     // Set IRQ for timer N. Using IRQ4 - 36th bit.
-    *timer_config |= (1ULL << 36);
+    //*timer_config |= (1 << 36);
+
+    // Enable I/O API routing.
+    *timer_config |= (1 << 9);
+
+    // Allow setting the accumulator.
+    *timer_config |= (1 << 6);
 
     // Enable periodic timer mode.
-    *timer_config |= (1ULL << 3);
+    *timer_config |= (1 << 3);
 
     // Enable interrupts.
-    *timer_config |= (1ULL << 2);
+    *timer_config |= (1 << 2);
 
-    // Set level interrupt mode.
+    // Set level interrupt mode to use level, not edge.
     *timer_config |= (1ULL << 1);
+
+    // Disable the PIT timer on IRQ0.
+    disable_interrupts();
+    outb(0x43, 0x30);
+    outb(0x40, 0);
+    outb(0x40, 0);
+    enable_interrupts();
 
     // Set the comparator.
     uint64_t* timer_comp = _timer_comparator_reg(0);
-    *timer_comp = (uint64_t)1000000;
+    *timer_comp = tick_period * 10;
+    *timer_comp = tick_period * 10; // This sets the accumulator.
 
     // Set the IRQ IDT handler.
-    ioapic_redirect_irq(bsp_lapic_id, TIMER_VECTOR, 4, true);
+    ioapic_redirect_irq(bsp_lapic_id, TIMER_VECTOR, 0, true);
 
     // Global enable.
     regs->config = regs->config | 1;
@@ -98,5 +114,5 @@ void hpet_init()
 void hpet_ack()
 {
     struct hpet_regs *regs = (struct hpet_regs*)base_addr;
-    regs->interrupt_status |= (1 << 4);
+    regs->interrupt_status |= (1 << 0);
 }
