@@ -34,6 +34,7 @@
 #include <terminal.h>
 #include <queue.h>
 #include <hpet.h>
+#include <pit.h>
 #include "kernel.h"
 
 CQueue_t *q_keyboard;
@@ -65,8 +66,6 @@ void kernel_main(void)
     enable_interrupts();
     kprintf("GDT/IDT initialized.\n");
 
-    //fb_init();
- 
     if (is_paging_enabled()) {
         kprintf("Paging enabled.\n");
     } else {
@@ -80,11 +79,14 @@ void kernel_main(void)
     lapic_init();
     acpi_init();
 
-    hpet_init();
-
     q_keyboard = cqueue_create(200);
     ps2_init();
 
+    // Timers.
+    pit_disable_timer();
+    hpet_init();
+
+    // Kernal loop.
     while(1) {        
         // Check if we have any keyboard events.
         if (q_keyboard->num_items > 0) {

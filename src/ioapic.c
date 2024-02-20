@@ -131,6 +131,7 @@ void ioapic_redirect_irq(uint32_t lapic_id, uint8_t vector, uint8_t irq, bool st
 
         // Does this override entry affect the IRQ we want to redirect?
         if (irq == pISO->irq_source) {
+            kprintf("I/O APIC using override from %d to %d.\n", irq, pISO->gsi);
             _ioapic_redirect_gsi(lapic_id, vector, pISO->gsi, pISO->flags, status);
             return;
         }

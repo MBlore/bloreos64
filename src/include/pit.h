@@ -15,28 +15,9 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_STR_H
-#define _BLOREOS_STR_H
+#ifndef _BLOREOS_PIT_H
+#define _BLOREOS_PIT_H
 
-#include <stddef.h>
-#include <stdarg.h>
-
-void reverse(char str[], size_t length);
-
-size_t itoa(int num, char str[], size_t base);
-size_t ltoa(int64_t num, char str[], size_t base);
-size_t ultoa(uint64_t num, char str[], size_t base);
-
-size_t strlen(const char *str);
-int strcmp(const char *l, const char *r);
-
-int snprintf(char buffer[], size_t size, const char format[], ...);
-int vsnprintf(char buffer[], size_t size, const char format[], va_list args);
-void kprintf(const char format[], ...);
-
-void sprint_binary8(char s[], uint8_t ch);
-void sprint_binary16(char s[], uint16_t ch);
-void sprint_binary32(char buff[], uint32_t ch);
-void sprint_binary64(char buff[], uint64_t ch);
+void pit_disable_timer();
 
 #endif

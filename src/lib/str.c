@@ -316,11 +316,68 @@ void kprintf(const char format[], ...)
  * buff must be at least 9 bytes.
  * Bits printed right-to-left, 765433210.
 */
-void sprint_binary(char buff[], uint8_t ch)
+void sprint_binary8(char buff[], uint8_t ch)
 {
     for (int i = 0; i < 8; i++) {
         buff[7-i] = ch & (1 << i) ? '1' : '0';
     }
 
     buff[8] = '\0';
+}
+
+/*
+ * Prints the specified uint32_t to a char buffer in binary form.
+ * buff must be at least 18 bytes.
+ * Bits printed right-to-left, "01100110 01100110 01100110 01100110".
+*/
+void sprint_binary16(char buff[], uint32_t ch)
+{
+    buff[17] = '\0';
+    int bitIndex, charIndex = 0;
+
+    for (bitIndex = 0; bitIndex < 16; bitIndex++) {
+        buff[charIndex++] = (ch & (1u << (15 - bitIndex))) ? '1' : '0';
+
+        if ((bitIndex + 1) % 8 == 0 && bitIndex != 15) {
+            buff[charIndex++] = ' ';
+        }
+    }
+}
+
+/*
+ * Prints the specified uint32_t to a char buffer in binary form.
+ * buff must be at least 36 bytes.
+ * Bits printed right-to-left, "01100110 01100110 01100110 01100110".
+*/
+void sprint_binary32(char buff[], uint32_t ch)
+{
+    buff[35] = '\0';
+    int bitIndex, charIndex = 0;
+
+    for (bitIndex = 0; bitIndex < 32; bitIndex++) {
+        buff[charIndex++] = (ch & (1u << (31 - bitIndex))) ? '1' : '0';
+
+        if ((bitIndex + 1) % 8 == 0 && bitIndex != 31) {
+            buff[charIndex++] = ' ';
+        }
+    }
+}
+
+/*
+ * Prints the specified uint32_t to a char buffer in binary form.
+ * buff must be at least 72 bytes.
+ * Bits printed right-to-left, "01100110 01100110 01100110 01100110".
+*/
+void sprint_binary64(char buff[], uint32_t ch)
+{
+    buff[71] = '\0';
+    int bitIndex, charIndex = 0;
+
+    for (bitIndex = 0; bitIndex < 64; bitIndex++) {
+        buff[charIndex++] = (ch & (1u << (63 - bitIndex))) ? '1' : '0';
+
+        if ((bitIndex + 1) % 8 == 0 && bitIndex != 63) {
+            buff[charIndex++] = ' ';
+        }
+    }
 }

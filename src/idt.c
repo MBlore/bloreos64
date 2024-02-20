@@ -66,11 +66,12 @@ void _handle_interrupt()
 }
 #pragma GCC diagnostic pop
 
+/*
+ * ISR Handler for the HPET timer 0.
+*/
 void _handle_timer()
 {
     isr_save();
-    // TODO: Why is this not writing more than once :(
-    cqueue_write(q_keyboard, 47);
     hpet_ack();
     lapic_eoi();
     isr_restore();
