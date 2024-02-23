@@ -72,6 +72,7 @@ void _handle_interrupt()
 void _handle_timer()
 {
     isr_save();
+    term_cblink();
     hpet_ack();
     lapic_eoi();
     isr_restore();

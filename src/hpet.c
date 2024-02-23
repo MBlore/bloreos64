@@ -24,6 +24,8 @@
 #include <idt.h>
 #include <cpu.h>
 
+#define FEMTOSECS_PER_SEC 1000000000000000LL
+
 struct hpet_regs {
     uint64_t capabilities;      // Read-Only
     uint64_t reserved1;
@@ -33,6 +35,7 @@ struct hpet_regs {
 };
 
 uint64_t *base_addr = 0;
+uint64_t hpet_frequency;
 
 uint64_t* _timer_config_reg(uint32_t n)
 {
@@ -64,6 +67,9 @@ void hpet_init()
     kprintf("  HPET 64-Bit Counter: %d\n", (regs->capabilities >> 13) & 1);
     uint32_t tick_period = (uint32_t)(regs->capabilities >> 32);
     kprintf("  HPET Tick Period: %d\n", tick_period);
+
+    hpet_frequency = FEMTOSECS_PER_SEC / tick_period;
+    kprintf("  HPET Frequency: %d\n", hpet_frequency);
 
     // If following is 1, routing is as follows (0 = no legacy routing):
     //  Timer 0 will be routed to IRQ0 in Non-APIC or IRQ2 in the I/O APIC.
@@ -106,9 +112,10 @@ void hpet_init()
     *timer_config |= (1 << 2);
 
     // Set the comparator.
+    // Setting the comparator to the hpet_frequency is exactly 1 second.
     uint64_t* timer_comp = _timer_comparator_reg(0);
-    *timer_comp = tick_period * 10;
-    *timer_comp = tick_period * 10; // This sets the accumulator.
+    *timer_comp = hpet_frequency / 2;
+    *timer_comp = hpet_frequency / 2;    // Accumulator set.
 
     // Set the IRQ IDT handler.
     ioapic_redirect_irq(bsp_lapic_id, TIMER_VECTOR, 0, true);

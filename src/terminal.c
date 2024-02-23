@@ -24,6 +24,7 @@
 #include <mem.h>
 #include <stdbool.h>
 #include <cpu.h>
+#include <atomic.h>
 
 typedef struct {
     uint16_t magic;         // Magic bytes for identification.
@@ -64,6 +65,8 @@ uint32_t cursor_x = 0;
 uint32_t cursor_y = 0;
 
 char input_str[256];
+spinlock_t _cursor_lock;
+bool cursor_visible;
 
 inline void term_fgcolor(uint32_t color)
 {
@@ -180,6 +183,10 @@ void _clear_cursor()
 */
 void _render_cursor()
 {
+    if (!cursor_visible) {
+        return;
+    }
+
     // Draw a line "|" for the cursor.
     for (uint32_t i = 0; i < glyph_height; i++) {
         _put_pixel(input_render_x, input_render_y+i, TERM_CURSOR_COLOR);
@@ -187,6 +194,22 @@ void _render_cursor()
 
     cursor_x = input_render_x;
     cursor_y = input_render_y;
+}
+
+/*
+ * This is called when the cursor is toggled for visibility.
+*/
+void term_cblink()
+{
+    disable_interrupts();
+    spinlock_lock(&_cursor_lock);
+
+    cursor_visible = !cursor_visible;
+    _clear_cursor();
+    _render_cursor();
+    
+    spinlock_unlock(&_cursor_lock);
+    enable_interrupts();
 }
 
 /*

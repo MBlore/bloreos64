@@ -63,6 +63,7 @@ void kernel_main(void)
     disable_interrupts();
     init_gdt();
     idt_init();
+    pit_disable_timer();
     enable_interrupts();
     kprintf("GDT/IDT initialized.\n");
 
@@ -83,7 +84,6 @@ void kernel_main(void)
     ps2_init();
 
     // Timers.
-    pit_disable_timer();
     hpet_init();
 
     // Kernal loop.

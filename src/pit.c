@@ -24,13 +24,10 @@
 
 /*
  * Disables the PIT timer.
- * Performs a cli/sti.
 */
 void pit_disable_timer()
 {
-    disable_interrupts();
     outb(0x43, 0x30);
     outb(0x40, 0);
     outb(0x40, 0);
-    enable_interrupts();
 }
