@@ -60,11 +60,15 @@ void kernel_main(void)
     term_fgcolor(TERM_DEFAULT_FGCOLOR);
 
     report_cpu_details();
+
     disable_interrupts();
+
     init_gdt();
     idt_init();
     pit_disable_timer();
+
     enable_interrupts();
+
     kprintf("GDT/IDT initialized.\n");
 
     if (is_paging_enabled()) {
@@ -85,6 +89,19 @@ void kernel_main(void)
 
     // Timers.
     hpet_init();
+
+    kprintf("Starting 10 seconds sleep.\n");
+    hpet_sleep(10000);
+    kprintf("Starting 1 seconds sleep.\n");
+    hpet_sleep(1000);
+    kprintf("Starting 1 seconds sleep.\n");
+    hpet_sleep(1000);
+    kprintf("Starting 1 seconds sleep.\n");
+    hpet_sleep(1000);
+    kprintf("Starting 1 seconds sleep.\n");
+    hpet_sleep(1000);
+    kprintf("Starting 1 seconds sleep.\n");
+    hpet_sleep(1000);
 
     // Kernal loop.
     while(1) {        

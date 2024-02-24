@@ -26,6 +26,8 @@
 
 #define FEMTOSECS_PER_SEC 1000000000000000LL
 
+#define HPET_REG_MAIN_COUNTER   0x0F0
+
 struct hpet_regs {
     uint64_t capabilities;      // Read-Only
     uint64_t reserved1;
@@ -36,6 +38,7 @@ struct hpet_regs {
 
 uint64_t *base_addr = 0;
 uint64_t hpet_frequency;
+volatile uint64_t _ticks;       // How many times the timer interrupt has fired.
 
 uint64_t* _timer_config_reg(uint32_t n)
 {
@@ -45,6 +48,11 @@ uint64_t* _timer_config_reg(uint32_t n)
 uint64_t* _timer_comparator_reg(uint32_t n)
 {
     return (uint64_t*)((char*)base_addr + (0x108 + (0x20 * n)));
+}
+
+static inline uint64_t hpet_read(uint64_t offset)
+{
+    return *((volatile uint64_t*)(base_addr + offset));
 }
 
 void hpet_init()
@@ -120,8 +128,36 @@ void hpet_init()
     // Set the IRQ IDT handler.
     ioapic_redirect_irq(bsp_lapic_id, TIMER_VECTOR, 0, true);
 
-    // Global enable - timers start.
+    _ticks = 0;
+}
+
+/* 
+ * Disable the global enable for the HPET.
+ * Bug: If this function is not force inlined, interrupts act like they are disabled after this functions code is inlined and called?!
+*/
+void __attribute__ ((noinline)) hpet_disable()
+{
+    struct hpet_regs *regs = (struct hpet_regs*)base_addr;
+    regs->config &= ~1;
+}
+
+/* 
+ * Enable the global enable for the HPET.
+ * Bug: If this function is not force inlined, interrupts act like they are disabled after this functions code is inlined and called?!
+*/
+void __attribute__ ((noinline)) hpet_enable()
+{
+    struct hpet_regs *regs = (struct hpet_regs*)base_addr;
     regs->config |= 1;
+}
+
+/*
+ * Disabes and resets the HPET comparator. 
+*/
+void hpet_reset()
+{
+    hpet_disable();
+    _ticks = 0;
 }
 
 void hpet_ack()
@@ -134,4 +170,41 @@ void hpet_ack()
     struct hpet_regs *regs = (struct hpet_regs*)base_addr;
     //regs->interrupt_status |= 1;
     regs->interrupt_status &= ~((uint64_t)1);
+}
+
+/*
+ * Sleep until the specified time in milliseconds has passed.
+*/
+void hpet_sleep(uint64_t ms)
+{
+    hpet_reset();
+
+    // Set the comparator value.
+    uint64_t* timer_comp = _timer_comparator_reg(0);
+    *timer_comp = (uint64_t)((hpet_frequency / 1000) * ms);
+
+    uint64_t cnt = hpet_read(HPET_REG_MAIN_COUNTER);
+    kprintf("Main Counter: %d\n", cnt);
+
+    *timer_comp = (uint64_t)(cnt + ((hpet_frequency / 1000) * ms));
+
+    hpet_enable();
+
+    // Wait until the ISR fires and we see a tick.
+    while(1) {
+        if (_ticks > 0) {
+            break;
+        }
+    }
+
+    hpet_disable();
+}
+
+/*
+ * Called when the HPET interrupt fires.
+*/
+void hpet_isr()
+{
+    _ticks++;
+    kprintf("Ticks: %d\n", _ticks);
 }

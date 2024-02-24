@@ -36,6 +36,7 @@
 #define LAPIC_ICRL          0x300
 #define LAPIC_ICRH          0x310
 #define LAPIC_LVT_TMR       0x320
+#define LAPIC_LVT_THERM     0x330
 #define LAPIC_LVT_PERF      0x340
 #define LAPIC_LVT_LINT0     0x350
 #define LAPIC_LVT_LINT1     0x360
@@ -50,7 +51,6 @@
 #define LAPIC_NMI           (4 << 8)
 #define TMR_PERIODC         0x20000
 #define TMR_BASEDIV         (1 << 20)
-
 
 uint64_t apic_base;
 uint32_t lapic_id;
@@ -92,8 +92,35 @@ void lapic_init()
 
     kprintf("CPUID APIC Enabled: %d\n", _check_lapic_cpuid());
     kprintf("MSR APIC Enabled: %d\n", apic_flags);
+
+    /*
+    // Set spurirous interrupt vector (at low byte), and enable the LAPIC at bit 8.
+    lapic_write(LAPIC_SPURIOUS, (uint32_t)(0xFF & LAPIC_SW_ENABLE));
+
+    // Reset the timer.
+    lapic_write(LAPIC_LVT_TMR, LAPIC_DISABLE);
+    lapic_write(LAPIC_TMRDIV, 0x3);
+    lapic_write(LAPIC_TMRINITCNT, 0xFFFFFFFF);  // Sets the count to -1.
+    
+    uint32_t val = lapic_read(LAPIC_TMRCURRCNT);
+    kprintf("LAPIC Counter: %d\n", val);
+    val = lapic_read(LAPIC_TMRCURRCNT);
+    kprintf("LAPIC Counter: %d\n", val);
+    */
 }
 
+/*
+ * Raises an interrupt on the target CPU's LAPIC.
+*/
+void lapic_raiseint(uint32_t lapic_id, uint32_t vector)
+{
+    lapic_write(LAPIC_ICRH, lapic_id << 24);        // The LAPIC id is written at bits 24-27 in this reg.
+    lapic_write(LAPIC_ICRL, vector);                // Bits 0-7 for the vector number. Other bits are flags.
+}
+
+/*
+ * Clears the end of interrupt register bit - called at the end handling an interrupt in an ISR.
+*/
 void lapic_eoi()
 {
     lapic_write(LAPIC_EOI, 0);

@@ -72,10 +72,14 @@ void _handle_interrupt()
 void _handle_timer()
 {
     isr_save();
-    term_cblink();
+
+    kprintf("Got a timer!\n");
+    hpet_isr();
+
     hpet_ack();
     lapic_eoi();
     isr_restore();
+    __builtin_unreachable();
 }
 
 /*

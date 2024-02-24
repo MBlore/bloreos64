@@ -20,6 +20,7 @@
 #include <limine.h>
 #include <str.h>
 #include <atomic.h>
+#include <lapic.h>
 
 volatile struct limine_smp_request smp_request = {
     .id = LIMINE_SMP_REQUEST,
@@ -45,6 +46,8 @@ void _cpu_awake(struct limine_smp_info *smp_info)
     // PAT - wrmsr(0x277
     // Sched...
 
+    lapic_init();
+
     spinlock_lock(&_cpu_lock);
     kprintf("Waking up...\n");
     kprintf("LAPIC ID: %d\n", smp_info->lapic_id);
@@ -64,6 +67,7 @@ void cpu_init()
     kprintf("BSP LAPIC ID: %d\n", bsp_lapic_id);
     kprintf("CPU Count: %d\n", cpu_count);
 
+    /*
     // Wake the cores up...
     for (uint64_t i = 0; i < cpu_count; i++) {
         if (smp_request.response->cpus[i]->lapic_id == bsp_lapic_id) {
@@ -79,4 +83,5 @@ void cpu_init()
     }
 
     kprintf("All CPU cores online.\n");
+    */
 }

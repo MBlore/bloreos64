@@ -19,6 +19,8 @@
 #define _BLOREOS_CPU_H
 
 #include <stdint.h>
+#include <str.h>
+#include <stdbool.h>
 
 extern uint32_t bsp_lapic_id;      // Bootstrap processor APIC ID.
 extern uint64_t cpu_count;
@@ -223,6 +225,19 @@ static inline void isr_restore()
         :
         : "memory"
     );
+}
+
+static inline bool are_interrupts_enabled()
+{
+    unsigned long flags;
+
+    asm volatile ("pushfq\n\t"
+                  "pop %0\n\t"
+                  : "=rm" (flags)
+                  :
+                  : "memory");
+
+    return (flags & (1 << 9)) != 0;
 }
 
 #endif
