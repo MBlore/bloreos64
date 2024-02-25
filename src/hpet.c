@@ -192,9 +192,8 @@ void hpet_ack()
     //   Write 1 to the timer position.
     // Edge mode (default):
     //   (Optional) Write 0 to the timer position n.
-    volatile struct hpet_regs *regs = (volatile struct hpet_regs*)base_addr;
     //regs->interrupt_status |= 1;
-    regs->interrupt_status &= ~((uint64_t)1);
+    hpet_regs->interrupt_status &= ~((uint64_t)1);
 }
 
 /*

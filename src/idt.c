@@ -34,7 +34,10 @@
 struct idt_entry idt[256];
 struct idt_ptr idtp;
 
-extern void ISR_Handler(void);
+extern void ISR_Handler_PS2(void);
+extern void ISR_Handler_Faults(void);
+
+extern void *isr_thunks[];
 
 void _idt_load()
 {
@@ -57,14 +60,34 @@ void _idt_set_gate(int vector, void *handler, uint8_t flags)
     idt[vector].reserved = 0;
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-void _handle_interrupt()
+void _handle_fault(uint64_t vector)
 {
-    kprintf("**FAULT**: Unhandled fault occurred.\n");
-    asm("hlt");
+    const char *fault_names[32];
+    fault_names[0] = "Divide Error Exception";
+    fault_names[1] = "Debug Exception";
+    fault_names[2] = "NMI Interrupt";
+    fault_names[3] = "Breakpoint Exception";
+    fault_names[4] = "Overflow Exception";
+    fault_names[5] = "BOUND Range Exceeded Exception";
+    fault_names[6] = "Invalid Opcode Exception";
+    fault_names[7] = "Device Not Available Exception";
+    fault_names[8] = "Double Fault Exception";
+    fault_names[9] = "Coprocessor Segment Overrun";
+    fault_names[10] = "Invalid TSS Exception";
+    fault_names[11] = "Segment Not Present";
+    fault_names[12] = "Stack Fault Exception";
+    fault_names[13] = "General Protection Exception";
+    fault_names[14] = "Page Fault Exception";
+    fault_names[15] = "";
+    fault_names[16] = "x87 FPU Floating-Point Error";
+    fault_names[17] = "Alignment Check Exception";
+    fault_names[18] = "Machine-Check Exception";
+    fault_names[19] = "SIMD Floating-Point Exception";
+    fault_names[20] = "Virtualization Exception";
+    fault_names[21] = "Control Protection Exception";
+    
+    kprintf("**FAULT**: (%lu) %s\n", vector, fault_names[vector]);
 }
-#pragma GCC diagnostic pop
 
 /*
  * ISR Handler for the HPET timer 0.
@@ -97,12 +120,12 @@ void idt_init()
 
     for (int i = 0; i < 32; i++) {
         // 0x8E = ring-0 privilege level.
-        _idt_set_gate(i, _handle_interrupt, 0x8E);
+        _idt_set_gate(i, isr_thunks[i], 0x8E);
     }
 
     // Device gates.
     _idt_set_gate(TIMER_VECTOR, _handle_timer, 0x8E);
-    _idt_set_gate(KEYBOARD_VECTOR, ISR_Handler, 0x8E);
+    _idt_set_gate(KEYBOARD_VECTOR, ISR_Handler_PS2, 0x8E);
 
     _idt_load();
     kprintf("Loading IDT at: 0x%X\n", &idtp);

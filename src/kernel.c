@@ -87,6 +87,15 @@ void kernel_main(void)
     q_keyboard = cqueue_create(200);
     ps2_init();
 
+    /*
+    int *ptr = 0;
+    ptr = 1;
+    */
+
+    //__builtin_trap();
+
+    asm("int3");
+
     // Timers.
     hpet_init();
 

@@ -1,7 +1,7 @@
-.global ISR_Handler
+.global ISR_Handler_PS2
 .extern _handle_keyboard
 
-ISR_Handler:
+ISR_Handler_PS2:
     # Save general registers.
     push %r15
     push %r14

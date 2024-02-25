@@ -93,7 +93,6 @@ void lapic_init()
     kprintf("CPUID APIC Enabled: %d\n", _check_lapic_cpuid());
     kprintf("MSR APIC Enabled: %d\n", apic_flags);
 
-    /*
     // Set spurirous interrupt vector (at low byte), and enable the LAPIC at bit 8.
     lapic_write(LAPIC_SPURIOUS, (uint32_t)(0xFF & LAPIC_SW_ENABLE));
 
@@ -106,7 +105,6 @@ void lapic_init()
     kprintf("LAPIC Counter: %d\n", val);
     val = lapic_read(LAPIC_TMRCURRCNT);
     kprintf("LAPIC Counter: %d\n", val);
-    */
 }
 
 /*
