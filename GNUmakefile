@@ -69,7 +69,8 @@ override CPPFLAGS := \
     $(CPPFLAGS) \
     -MMD \
     -MP \
-    -g
+    -g \
+    -ggdb 
  
 # Internal linker flags that should not be changed by the user.
 override LDFLAGS += \
@@ -139,6 +140,10 @@ clean:
 .PHONY: run
 run: $(IMAGE_NAME).iso
 	qemu-system-x86_64 -M q35 -m 2G -smp cores=4,threads=1,sockets=1 -cdrom $(IMAGE_NAME).iso -boot d -serial file:logs/$(shell date +'%Y%m%d_%H%M%S').txt -d int -no-reboot
+
+.PHONY: debug
+debug: $(IMAGE_NAME).iso
+	qemu-system-x86_64 -M q35 -m 2G -smp cores=4,threads=1,sockets=1 -cdrom $(IMAGE_NAME).iso -boot d -serial file:logs/$(shell date +'%Y%m%d_%H%M%S').txt -d int -no-reboot -s -S
 
 .PHONY: run-uefi
 run-uefi: ovmf $(IMAGE_NAME).iso

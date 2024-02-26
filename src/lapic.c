@@ -72,7 +72,6 @@ static inline uint32_t lapic_read(uint32_t offset)
 static inline void lapic_write(uint32_t offset, uint32_t val)
 {
     volatile uint32_t *pAddr = (uint32_t*)(vmm_higher_half_offset + apic_base + offset);
-    kprintf("pAddr: 0x%X\n", pAddr);
     *pAddr = val;
 }
 
@@ -85,22 +84,17 @@ void lapic_time_stop()
 void lapic_timer_init()
 {
     lapic_write(LAPIC_TMRDIV, 0);
-    lapic_write(LAPIC_LVT_TMR, 32);
     lapic_time_stop();
 
     // Start the timer countdown.
     lapic_write(LAPIC_TMRINITCNT, 0xFFFFFFFF);  // Sets the count to -1.
-    kprintf("Timing...\n");
-    hpet_sleep(10);
-    kprintf("Timer finished.\n");
-    uint32_t ticksin10ms = 0xFFFFFFFF - lapic_read(LAPIC_TMRCURRCNT);
+    hpet_sleep(100);
+    uint32_t ticksin100ms = 0xFFFFFFFF - lapic_read(LAPIC_TMRCURRCNT);
     lapic_time_stop();
 
-    kprintf("Unmasking...\n");
-
     // This unmasks and starts the timer in period mode.
-    lapic_write(LAPIC_TMRINITCNT, ticksin10ms);
-    lapic_write(LAPIC_LVT_TMR, 32 | TMR_PERIODC);
+    lapic_write(LAPIC_TMRINITCNT, ticksin100ms * 10);
+    lapic_write(LAPIC_LVT_TMR, LAPICTMR_VECTOR | TMR_PERIODC);
     
     kprintf("LAPIC timer done.\n");
 }

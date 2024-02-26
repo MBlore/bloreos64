@@ -26,7 +26,7 @@
 #include <serial.h>
 #include <hpet.h>
 
-#define KERNEL_CODE_SEGMENT_OFFSET 0x08 // TODO: Check this
+#define PRIVELEGE_RING0 0x8E
 
 #define INTERRUPT_GATE 0xE;
 #define TRAP_GATE 0xF;
@@ -78,7 +78,7 @@ void _handle_fault(uint64_t vector)
     fault_names[12] = "Stack Fault Exception";
     fault_names[13] = "General Protection Exception";
     fault_names[14] = "Page Fault Exception";
-    fault_names[15] = "";
+    fault_names[15] = "Unknown";
     fault_names[16] = "x87 FPU Floating-Point Error";
     fault_names[17] = "Alignment Check Exception";
     fault_names[18] = "Machine-Check Exception";
@@ -90,17 +90,15 @@ void _handle_fault(uint64_t vector)
 }
 
 /*
- * ISR Handler for the HPET timer 0 and LAPIC timer.
+ * ISR Handler for the HPET timer 0.
 */
 void _handle_timer()
 {
     isr_save();
     hpet_isr();
     hpet_ack();
-    kprintf("HPET ISR\n");
     lapic_eoi();
     isr_restore();
-    __builtin_unreachable();
 }
 
 void _handle_lapic_timer()
@@ -109,7 +107,6 @@ void _handle_lapic_timer()
     kprintf("LAPIC TIMER TICK!\n");
     lapic_eoi();
     isr_restore();
-    __builtin_unreachable();
 }
 
 /*
@@ -129,15 +126,13 @@ void idt_init()
     memset(&idt, 0, sizeof(idt));
 
     for (int i = 0; i < 32; i++) {
-        // 0x8E = ring-0 privilege level.
-        _idt_set_gate(i, isr_thunks[i], 0x8E);
+        _idt_set_gate(i, isr_thunks[i], PRIVELEGE_RING0);
     }
 
     // Device gates.
-    _idt_set_gate(TIMER_VECTOR, _handle_timer, 0x8E);
-    _idt_set_gate(KEYBOARD_VECTOR, ISR_Handler_PS2, 0x8E);
-
-    //_idt_set_gate(LAPICTMR_VECTOR, _handle_lapic_timer, 0x8E);
+    _idt_set_gate(TIMER_VECTOR, _handle_timer, PRIVELEGE_RING0);
+    _idt_set_gate(KEYBOARD_VECTOR, ISR_Handler_PS2, PRIVELEGE_RING0);
+    _idt_set_gate(LAPICTMR_VECTOR, _handle_lapic_timer, PRIVELEGE_RING0);
 
     _idt_load();
     kprintf("Loading IDT at: 0x%X\n", &idtp);

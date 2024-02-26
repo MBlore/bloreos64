@@ -220,9 +220,11 @@ void hpet_sleep(uint64_t ms)
     #endif
     hpet_one_shot(ms);
 
+    kprintf("About to sleep...\n");
     // Wait until the ISR fires and we see a tick.
     while(_ticks == 0);
-
+    
+    kprintf("HPET sleep finished.\n");
     hpet_disable();
 }
 
