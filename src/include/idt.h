@@ -25,7 +25,7 @@
 #define TIMER_VECTOR 32
 #define KEYBOARD_VECTOR 33
 #define MOUSE_VECTOR 34
-#define NETWORK_VECTOR 35
+#define LAPICTMR_VECTOR 45
 
 struct idt_entry
 {

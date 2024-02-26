@@ -22,6 +22,7 @@
 
 void lapic_init();
 void lapic_eoi();
+void lapic_raiseint(uint32_t lapic_id, uint32_t vector);
 
 extern uint32_t lapic_id;
 

@@ -90,13 +90,23 @@ void _handle_fault(uint64_t vector)
 }
 
 /*
- * ISR Handler for the HPET timer 0.
+ * ISR Handler for the HPET timer 0 and LAPIC timer.
 */
 void _handle_timer()
 {
     isr_save();
     hpet_isr();
     hpet_ack();
+    kprintf("HPET ISR\n");
+    lapic_eoi();
+    isr_restore();
+    __builtin_unreachable();
+}
+
+void _handle_lapic_timer()
+{
+    isr_save();
+    kprintf("LAPIC TIMER TICK!\n");
     lapic_eoi();
     isr_restore();
     __builtin_unreachable();
@@ -126,6 +136,8 @@ void idt_init()
     // Device gates.
     _idt_set_gate(TIMER_VECTOR, _handle_timer, 0x8E);
     _idt_set_gate(KEYBOARD_VECTOR, ISR_Handler_PS2, 0x8E);
+
+    //_idt_set_gate(LAPICTMR_VECTOR, _handle_lapic_timer, 0x8E);
 
     _idt_load();
     kprintf("Loading IDT at: 0x%X\n", &idtp);

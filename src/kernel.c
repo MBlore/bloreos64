@@ -80,37 +80,28 @@ void kernel_main(void)
     kmem_init();
     kprintf("PMM Available Pages: %lu\n", num_pages_available);
 
-    cpu_init();
-    lapic_init();
     acpi_init();
+    
+    hpet_init();
 
+    cpu_init();
+
+    lapic_init();
+    
     q_keyboard = cqueue_create(200);
     ps2_init();
 
-    /*
-    int *ptr = 0;
-    ptr = 1;
-    */
-
-    //__builtin_trap();
-
-    asm("int3");
-
     // Timers.
-    hpet_init();
+    
 
-    kprintf("Starting 10 seconds sleep.\n");
-    hpet_sleep(10000);
+    /*
     kprintf("Starting 1 seconds sleep.\n");
     hpet_sleep(1000);
     kprintf("Starting 1 seconds sleep.\n");
     hpet_sleep(1000);
     kprintf("Starting 1 seconds sleep.\n");
     hpet_sleep(1000);
-    kprintf("Starting 1 seconds sleep.\n");
-    hpet_sleep(1000);
-    kprintf("Starting 1 seconds sleep.\n");
-    hpet_sleep(1000);
+    */
 
     // Kernal loop.
     while(1) {        

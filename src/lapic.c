@@ -22,6 +22,8 @@
 #include <mem.h>
 #include <cpu.h>
 #include <str.h>
+#include <hpet.h>
+#include <idt.h>
 
 #define IA32_APIC_BASE_MSR 0x1B
 
@@ -63,12 +65,44 @@ uint32_t _check_lapic_cpuid() {
 
 static inline uint32_t lapic_read(uint32_t offset)
 {
-    return *((volatile uint32_t*)(vmm_higher_half_offset + apic_base + offset));
+    volatile uint32_t *pAddr = (uint32_t*)(vmm_higher_half_offset + apic_base + offset);
+    return *pAddr;
 }
 
 static inline void lapic_write(uint32_t offset, uint32_t val)
 {
-    *((volatile uint32_t*)(vmm_higher_half_offset + apic_base + offset)) = val;
+    volatile uint32_t *pAddr = (uint32_t*)(vmm_higher_half_offset + apic_base + offset);
+    kprintf("pAddr: 0x%X\n", pAddr);
+    *pAddr = val;
+}
+
+void lapic_time_stop()
+{
+    lapic_write(LAPIC_TMRINITCNT, 0);
+    lapic_write(LAPIC_LVT_TMR, LAPIC_DISABLE);
+}
+
+void lapic_timer_init()
+{
+    lapic_write(LAPIC_TMRDIV, 0);
+    lapic_write(LAPIC_LVT_TMR, 32);
+    lapic_time_stop();
+
+    // Start the timer countdown.
+    lapic_write(LAPIC_TMRINITCNT, 0xFFFFFFFF);  // Sets the count to -1.
+    kprintf("Timing...\n");
+    hpet_sleep(10);
+    kprintf("Timer finished.\n");
+    uint32_t ticksin10ms = 0xFFFFFFFF - lapic_read(LAPIC_TMRCURRCNT);
+    lapic_time_stop();
+
+    kprintf("Unmasking...\n");
+
+    // This unmasks and starts the timer in period mode.
+    lapic_write(LAPIC_TMRINITCNT, ticksin10ms);
+    lapic_write(LAPIC_LVT_TMR, 32 | TMR_PERIODC);
+    
+    kprintf("LAPIC timer done.\n");
 }
 
 void lapic_init()
@@ -92,19 +126,11 @@ void lapic_init()
 
     kprintf("CPUID APIC Enabled: %d\n", _check_lapic_cpuid());
     kprintf("MSR APIC Enabled: %d\n", apic_flags);
-
-    // Set spurirous interrupt vector (at low byte), and enable the LAPIC at bit 8.
-    lapic_write(LAPIC_SPURIOUS, (uint32_t)(0xFF & LAPIC_SW_ENABLE));
-
-    // Reset the timer.
-    lapic_write(LAPIC_LVT_TMR, LAPIC_DISABLE);
-    lapic_write(LAPIC_TMRDIV, 0x3);
-    lapic_write(LAPIC_TMRINITCNT, 0xFFFFFFFF);  // Sets the count to -1.
     
-    uint32_t val = lapic_read(LAPIC_TMRCURRCNT);
-    kprintf("LAPIC Counter: %d\n", val);
-    val = lapic_read(LAPIC_TMRCURRCNT);
-    kprintf("LAPIC Counter: %d\n", val);
+    // Set spurirous interrupt vector (at low byte), and enable the LAPIC at bit 8.
+    lapic_write(LAPIC_SPURIOUS, lapic_read(LAPIC_SPURIOUS) | (uint32_t)0xFF | LAPIC_SW_ENABLE);
+
+    lapic_timer_init();
 }
 
 /*

@@ -24,6 +24,8 @@
 #include <idt.h>
 #include <cpu.h>
 
+#define HPET_DEBUG
+
 #define FEMTOSECS_PER_SEC 1000000000000000LL
 
 // Offsets from the base address of the HPET.
@@ -143,6 +145,9 @@ void hpet_init()
 */
 void hpet_one_shot(uint64_t ms)
 {
+    #ifdef HPET_DEBUG
+    kprintf("hpet_one_shot()\n");
+    #endif
     hpet_reset();
 
     // Reset the main counter to 0 for the next one-shot.
@@ -165,6 +170,9 @@ void hpet_one_shot(uint64_t ms)
 */
 inline void hpet_disable()
 {
+    #ifdef HPET_DEBUG
+    kprintf("hpet_disable()\n");
+    #endif
     hpet_regs->config &= ~1;
 }
 
@@ -173,14 +181,20 @@ inline void hpet_disable()
 */
 inline void hpet_enable()
 {
+    #ifdef HPET_DEBUG
+    kprintf("hpet_enable()\n");
+    #endif
     hpet_regs->config |= 1;
 }
 
 /*
- * Disabes the HPET and resets the ticks tracker. 
+ * Disabes the HPET and resets the ticks tracker.
 */
 void hpet_reset()
 {
+    #ifdef HPET_DEBUG
+    kprintf("hpet_reset()\n");
+    #endif
     hpet_disable();
     _ticks = 0;
 }
@@ -201,6 +215,9 @@ void hpet_ack()
 */
 void hpet_sleep(uint64_t ms)
 {
+    #ifdef HPET_DEBUG
+    kprintf("hpet_sleep()\n");
+    #endif
     hpet_one_shot(ms);
 
     // Wait until the ISR fires and we see a tick.
