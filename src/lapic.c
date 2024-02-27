@@ -81,26 +81,31 @@ void lapic_time_stop()
     lapic_write(LAPIC_LVT_TMR, LAPIC_DISABLE);
 }
 
+/*
+ * Calibrates the timer. 
+*/
 void lapic_timer_init()
-{
+{    
     lapic_write(LAPIC_TMRDIV, 0);
     lapic_time_stop();
 
     // Start the timer countdown.
+    // Its important no log writes are done in this timing block as
+    // that will invoke device writes/frame buffer writes and be slow.
     lapic_write(LAPIC_TMRINITCNT, 0xFFFFFFFF);  // Sets the count to -1.
-    hpet_sleep(100);
+    hpet_sleep_counter(100);
     uint32_t ticksin100ms = 0xFFFFFFFF - lapic_read(LAPIC_TMRCURRCNT);
     lapic_time_stop();
 
     // This unmasks and starts the timer in period mode.
     lapic_write(LAPIC_TMRINITCNT, ticksin100ms * 10);
     lapic_write(LAPIC_LVT_TMR, LAPICTMR_VECTOR | TMR_PERIODC);
-    
-    kprintf("LAPIC timer done.\n");
 }
 
 void lapic_init()
 {
+    bool istate = set_interrupt_state(false);
+
     apic_base = read_msr(IA32_APIC_BASE_MSR);
     
     // Mask out the flags to get only the address.
@@ -125,6 +130,8 @@ void lapic_init()
     lapic_write(LAPIC_SPURIOUS, lapic_read(LAPIC_SPURIOUS) | (uint32_t)0xFF | LAPIC_SW_ENABLE);
 
     lapic_timer_init();
+
+    set_interrupt_state(istate);
 }
 
 /*

@@ -91,18 +91,6 @@ void kernel_main(void)
     q_keyboard = cqueue_create(200);
     ps2_init();
 
-    // Timers.
-    
-
-    /*
-    kprintf("Starting 1 seconds sleep.\n");
-    hpet_sleep(1000);
-    kprintf("Starting 1 seconds sleep.\n");
-    hpet_sleep(1000);
-    kprintf("Starting 1 seconds sleep.\n");
-    hpet_sleep(1000);
-    */
-
     // Kernal loop.
     while(1) {        
         // Check if we have any keyboard events.

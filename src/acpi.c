@@ -201,6 +201,8 @@ void acpi_init()
             _parse_madt(desc);
             continue;
         }
+
+        kprintf("Found ACPI Table: %c%c%c%c\n", desc->signature[0], desc->signature[1], desc->signature[2], desc->signature[3]);
     }
 
     kprintf("ACPI initialized.\n");

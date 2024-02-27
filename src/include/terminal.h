@@ -30,5 +30,6 @@ void term_fgcolor(uint32_t color);
 void term_bgcolor(uint32_t color);
 void term_keyevent(KeyEvent_t *ke);
 void term_cblink();
+void term_clear();
 
 #endif

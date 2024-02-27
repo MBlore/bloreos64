@@ -25,6 +25,7 @@
 #include <stdbool.h>
 #include <cpu.h>
 #include <atomic.h>
+#include <idt.h>
 
 typedef struct {
     uint16_t magic;         // Magic bytes for identification.
@@ -342,6 +343,16 @@ void term_init()
 }
 
 /*
+ * Clears the screen.
+*/
+void term_clear()
+{
+    _clear_screen();
+    render_x = render_y = input_render_x = input_render_y = cursor_x = cursor_y = 0;
+    _render_input_line();
+}
+
+/*
  * Executes a command from the user input. 
 */
 void _handle_cmd()
@@ -349,9 +360,11 @@ void _handle_cmd()
     if (strcmp(input_str, "hello") == 0) {
         tprintf("World!\n");
     } else if (strcmp(input_str, "cls") == 0) {
-        _clear_screen();
-        render_x = render_y = input_render_x = input_render_y = cursor_x = cursor_y = 0;
-        _render_input_line();
+        term_clear();
+    } else if (strcmp(input_str, "time") == 0) {
+        tprintf("Kerner Time: %lums\n", kernel_timer_secs);
+    } else if (strcmp(input_str, "stime") == 0) {
+        tprintf("Kerner Time: %lus\n", kernel_timer_secs / 1000);
     } else {
         tprintf("Unknown command.\n");
     }

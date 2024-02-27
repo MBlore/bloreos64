@@ -74,7 +74,6 @@ void cpu_init()
             continue;
         }
 
-
         smp_request.response->cpus[i]->goto_address = _cpu_awake;
     }
 

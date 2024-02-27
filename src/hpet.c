@@ -24,7 +24,7 @@
 #include <idt.h>
 #include <cpu.h>
 
-#define HPET_DEBUG
+//#define HPET_DEBUG
 
 #define FEMTOSECS_PER_SEC 1000000000000000LL
 
@@ -212,6 +212,7 @@ void hpet_ack()
 
 /*
  * Sleep until the specified time in milliseconds has passed.
+ * This uses an interrupt signal to denote end of the sleep period.
 */
 void hpet_sleep(uint64_t ms)
 {
@@ -220,11 +221,28 @@ void hpet_sleep(uint64_t ms)
     #endif
     hpet_one_shot(ms);
 
-    kprintf("About to sleep...\n");
     // Wait until the ISR fires and we see a tick.
     while(_ticks == 0);
     
-    kprintf("HPET sleep finished.\n");
+    hpet_disable();
+}
+
+/*
+ * Sleep until the specified time in milliseconds has passed.
+ * This uses a constant main counter read to detect the period has passed.
+*/
+void hpet_sleep_counter(uint64_t ms)
+{
+    hpet_disable();
+
+    volatile uint64_t *timer_config = _timer_config_reg(0);
+    *timer_config &= ~(1 << 2);      // Disable timer 0 interrupts.
+
+    *hpet_main_counter = 0;
+    uint64_t limit = (uint64_t)((hpet_frequency / 1000) * ms);
+
+    hpet_enable();
+    while (*hpet_main_counter < limit);
     hpet_disable();
 }
 

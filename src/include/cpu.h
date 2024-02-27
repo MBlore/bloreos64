@@ -163,6 +163,37 @@ static inline void enable_interrupts()
     asm("sti");
 }
 
+static inline bool interrupt_state()
+{
+    unsigned long flags;
+
+    asm volatile ("pushfq\n\t"
+                  "pop %0\n\t"
+                  : "=rm" (flags)
+                  :
+                  : "memory");
+
+    return (flags & (1 << 9)) != 0;
+}
+
+/*
+ * Sets the interrupt state and returns the state of interrupts before the change.
+*/
+static inline bool set_interrupt_state(bool enabled)
+{
+    bool state = interrupt_state();
+
+    if (enabled) {
+        enable_interrupts();
+    } else {
+        disable_interrupts();
+    }
+
+    return state;
+}
+
+
+
 /*
  * Interrupt service routine state save.
 */
@@ -225,19 +256,6 @@ static inline void isr_restore()
         :
         : "memory"
     );
-}
-
-static inline bool are_interrupts_enabled()
-{
-    unsigned long flags;
-
-    asm volatile ("pushfq\n\t"
-                  "pop %0\n\t"
-                  : "=rm" (flags)
-                  :
-                  : "memory");
-
-    return (flags & (1 << 9)) != 0;
 }
 
 #endif

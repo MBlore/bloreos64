@@ -54,4 +54,6 @@ struct idt_frame {
 
 void idt_init();
 
+extern volatile uint64_t kernel_timer_secs;
+
 #endif

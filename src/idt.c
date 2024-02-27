@@ -34,9 +34,11 @@
 struct idt_entry idt[256];
 struct idt_ptr idtp;
 
+// Incrementing timer in milliseconds since the kernel started.
+volatile uint64_t kernel_timer_secs;
+
 extern void ISR_Handler_PS2(void);
 extern void ISR_Handler_Faults(void);
-
 extern void *isr_thunks[];
 
 void _idt_load()
@@ -101,10 +103,13 @@ void _handle_timer()
     isr_restore();
 }
 
+/*
+ * ISR Handler for the LAPIC timer.
+*/
 void _handle_lapic_timer()
 {
     isr_save();
-    kprintf("LAPIC TIMER TICK!\n");
+    kernel_timer_secs++;
     lapic_eoi();
     isr_restore();
 }
