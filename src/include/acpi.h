@@ -81,11 +81,23 @@ struct hpet
     uint8_t page_protection;
 } __attribute__((packed));
 
+// MCFG table
+struct mcfg_entry {
+    struct sysdesc desc;
+    char reserved1[8];
+    uint64_t mmio_base;
+    uint16_t segment;
+    uint8_t start;
+    uint8_t end;
+    uint32_t reserved2;
+} __attribute__((packed));
+
 #define IOAPIC_LIST_LEN 32
 #define ISO_LIST_LEN 128
 
 extern struct ioapic *ioapic_list[];
 extern struct iso *iso_list[];
 extern struct hpet *hpet;
+extern struct mcfg_entry *mcfg;
 
 #endif

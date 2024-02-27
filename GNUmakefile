@@ -28,7 +28,7 @@ override DEFAULT_LD := ld
 $(eval $(call DEFAULT_VAR,LD,$(DEFAULT_LD)))
  
 # User controllable C flags.
-override DEFAULT_CFLAGS := -g -O2 -pipe
+override DEFAULT_CFLAGS := -g -O2
 $(eval $(call DEFAULT_VAR,CFLAGS,$(DEFAULT_CFLAGS)))
  
 # User controllable C preprocessor flags. We set none by default.
@@ -70,7 +70,8 @@ override CPPFLAGS := \
     -MMD \
     -MP \
     -g \
-    -ggdb 
+    -ggdb \
+    -save-temps=obj     # 
  
 # Internal linker flags that should not be changed by the user.
 override LDFLAGS += \

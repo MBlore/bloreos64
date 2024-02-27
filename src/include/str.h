@@ -18,6 +18,7 @@
 #ifndef _BLOREOS_STR_H
 #define _BLOREOS_STR_H
 
+#include <stdint.h>
 #include <stddef.h>
 #include <stdarg.h>
 

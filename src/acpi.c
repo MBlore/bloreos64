@@ -26,6 +26,7 @@
 #include <str.h>
 #include <mem.h>
 #include <stdbool.h>
+#include <kernel.h>
 
 // Interrupt Controller Structure Types 
 #define ICS_ID_IO_APIC 1
@@ -34,6 +35,7 @@
 // Signature strings
 #define SDT_APIC_SIG    "APIC"
 #define SDT_APIC_HPET   "HPET"
+#define SDT_APIC_MCFG   "MCFG"
 
 struct limine_rsdp_request rsdp_request = {
     .id = LIMINE_RSDP_REQUEST,
@@ -91,6 +93,7 @@ struct rsdp *rsdp = NULL;
 struct rsdt *rsdt = NULL;
 struct madt *pMadt = NULL;
 struct hpet *hpet = NULL;
+struct mcfg_entry *mcfg = NULL;
 uint32_t rsdt_entry_count;
 
 /*
@@ -202,7 +205,20 @@ void acpi_init()
             continue;
         }
 
+        if (memcmp(desc->signature, SDT_APIC_MCFG, 4) == 0) {
+            mcfg = (struct mcfg_entry*)desc;
+            kprintf("BAR: 0x%X\n", mcfg->mmio_base);
+            kprintf("Segment: %d\n", mcfg->segment);
+            kprintf("Start: %d\n", mcfg->start);
+            kprintf("End: %d\n", mcfg->end);
+        }
+
         kprintf("Found ACPI Table: %c%c%c%c\n", desc->signature[0], desc->signature[1], desc->signature[2], desc->signature[3]);
+    }
+
+    if (!mcfg) {
+        kprintf("MCFG table not found - MMIO support for PCI not found - quitting.\n");
+        hcf();
     }
 
     kprintf("ACPI initialized.\n");
