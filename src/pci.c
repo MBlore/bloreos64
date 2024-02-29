@@ -41,75 +41,97 @@ uint32_t _pci_mm_read(uint8_t bus, uint8_t device, uint8_t function, uint32_t of
     return 0;
 }
 
-uint16_t _getVenderID(uint8_t bus, uint8_t device, uint8_t function)
+/*
+ * Reads from PCI MM config for a devices vendor ID.
+*/
+uint16_t _pci_mm_read_vendor_id(uint8_t bus, uint8_t device, uint8_t function)
 {
     uint16_t reg0 = _pci_mm_read(bus, device, function, 0x0, 2);
     return reg0;
 }
 
-uint8_t _getHeaderType(uint8_t bus, uint8_t device, uint8_t function)
+/*
+ * Reads from PCI MM config for a devices header type.
+*/
+uint8_t _pci_mm_read_header_type(uint8_t bus, uint8_t device, uint8_t function)
 {   
     uint32_t reg3 = _pci_mm_read(bus, device, function, 0xC, 4);
-    //return reg3 & 0x00FF0000;
     return (uint8_t)(reg3 >> 16);
 }
 
-uint8_t _getClassCode(uint8_t bus, uint8_t device, uint8_t function)
+/*
+ * Reads from PCI MM config for a devices class code.
+*/
+uint8_t _pci_mm_read_class_code(uint8_t bus, uint8_t device, uint8_t function)
 {
     uint32_t reg2 = _pci_mm_read(bus, device, function, 0x8, 4);
-    //uint8_t subclass = (uint8_t)(reg2 >> 16);
     uint8_t classcode = (uint8_t)(reg2 >> 24);
 
     return classcode;
 }
 
-uint8_t _getSubClassCode(uint8_t bus, uint8_t device, uint8_t function)
+/*
+ * Reads from PCI MM config for a devices sub-class code.
+*/
+uint8_t _pci_mm_read_subclass_code(uint8_t bus, uint8_t device, uint8_t function)
 {
     uint32_t reg2 = _pci_mm_read(bus, device, function, 0x8, 4);
     uint8_t subclass = (uint8_t)(reg2 >> 16);
     return subclass;
 }
 
-uint8_t _getProgIF(uint8_t bus, uint8_t device, uint8_t function)
+/*
+ * Reads from PCI MM config for a devices prog IF.
+*/
+uint8_t _pci_mm_read_prog_if(uint8_t bus, uint8_t device, uint8_t function)
 {
     uint32_t reg2 = _pci_mm_read(bus, device, function, 0x8, 4);
     uint8_t progif = (uint8_t)(reg2 >> 8);
     return progif;
 }
 
+/*
+ * Inspects a found device at the specific PCI bus, device, function location.
+*/
 void _check_function(uint8_t bus, uint8_t device, uint8_t function)
 {
-    uint8_t classcode = _getClassCode(bus, device, function);
-    uint8_t subclass = _getSubClassCode(bus, device, function);
-    uint8_t progif = _getProgIF(bus, device, function);
+    uint8_t classcode = _pci_mm_read_class_code(bus, device, function);
+    uint8_t subclass = _pci_mm_read_subclass_code(bus, device, function);
+    uint8_t progif = _pci_mm_read_prog_if(bus, device, function);
 
     kprintf("PCI: Found device class %d/%d/%d at %d %d %d\n",
         classcode, subclass, progif, bus, device, function);
 }
 
+/*
+ * Checks if a device is present at the specified bus and device. 
+*/
 void _check_device(uint8_t bus, uint8_t device)
 {
     uint8_t function = 0;
 
-    uint16_t vendorID = _getVenderID(bus, device, function);
+    uint16_t vendorID = _pci_mm_read_vendor_id(bus, device, function);
     if (vendorID == 0xFFFF) {
         return;
     }
 
     _check_function(bus, device, function);
 
-    uint16_t headerType = _getHeaderType(bus, device, function);
+    uint16_t headerType = _pci_mm_read_header_type(bus, device, function);
     if ((headerType & 0x80) != 0) {
         // It's a multi-function device, so check remaining functions.
         for (function = 1; function < 8; function++) {
-            if (_getVenderID(bus, device, function) != 0xFFFF) {
+            if (_pci_mm_read_vendor_id(bus, device, function) != 0xFFFF) {
                 _check_function(bus, device, function);
             }
         }
     }
 }
 
-void _check_all_buses()
+/*
+ * Scans every device ID on every bus ID looking for present devices.
+*/
+void _scan_all_buses()
 {
     for (uint16_t bus = 0; bus < 256; bus++) {
         for (uint8_t device = 0; device < 32; device++) {
@@ -120,6 +142,6 @@ void _check_all_buses()
 
 void pci_init()
 {
-    _check_all_buses();
+    _scan_all_buses();
     kprintf("PCI Initialized.\n");
 }

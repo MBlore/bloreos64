@@ -10,3 +10,5 @@ make run - runs QEmu with the built ISO image.
 
 mtools  
 xorriso
+gdisk
+qemu
