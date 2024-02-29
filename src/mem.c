@@ -325,7 +325,6 @@ void* kalloc(size_t numBytes)
             __reserve_pages(start_alloc_page, allocated_pages);
             num_pages_available -= allocated_pages;
             spinlock_unlock(&lock);
-            kprintf("PMM Allocated: %d page(s)\n", allocated_pages);
             return __get_addr_from_page(start_alloc_page);
         }
 

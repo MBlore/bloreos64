@@ -15,32 +15,9 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_PCI_H
-#define _BLOREOS_PCI_H
+#ifndef _BLOREOS_NVME_H
+#define _BLOREOS_NVME_H
 
-#include <stdint.h>
-
-struct pci_device {
-    uint8_t class_code;
-    uint8_t sub_class_code;
-    uint8_t bus;
-    uint8_t device;
-    uint8_t function;
-    uint8_t prog_if;
-    const char* description;
-    uint64_t address;
-    uint64_t bar0_address;
-    uint64_t bar1_address;
-    uint32_t header_type;
-};
-
-extern struct pci_device *pci_devices[];
-extern uint8_t pci_device_cnt;
-
-void pci_init();
-struct pci_device* pci_find_device(uint8_t class, uint8_t subclass);
-
-uint64_t pci_get_bar0_address();
-uint64_t pci_get_bar1_address();
+void nvme_init();
 
 #endif

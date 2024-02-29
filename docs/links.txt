@@ -17,3 +17,13 @@ ACPI Tables: https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Prog
 ACPI Coding: https://wiki.osdev.org/IOAPIC
 
 HPET Timer: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/software-developers-hpet-spec-1-0a.pdf
+
+Minix: https://github.com/Stichting-MINIX-Research-Foundation/minix/
+
+Plan9: https://github.com/0intro/plan9
+
+RedoxOS: https://gitlab.redox-os.org/redox-os/kernel/
+
+"PCI Express System Architecture by Tom Shanley, Don Anderson, Ravi Budruk, MindShare, Inc"
+
+PCI Specs: https://pc104.org/
