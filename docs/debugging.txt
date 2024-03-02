@@ -1,0 +1,9 @@
+Start with 'make debug'.
+
+Launch "gdb bloreos" in bloreos\bin
+
+Connect with "target remote :1234"
+
+Add breakpoint "break <function name>"
+
+Then "c" to run.

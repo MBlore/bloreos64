@@ -91,10 +91,11 @@ struct madt {
 
 struct rsdp *rsdp = NULL;
 struct rsdt *rsdt = NULL;
+struct xsdt *xsdt = NULL;
 struct madt *pMadt = NULL;
 struct hpet *hpet = NULL;
 struct mcfg_entry *mcfg = NULL;
-uint32_t rsdt_entry_count;
+uint32_t entry_size;
 
 /*
  * We don't have a proper malloc() yet so we are using fixed sized arrays to hold pointers to the structs in the MADT.
@@ -156,7 +157,11 @@ void _parse_madt(struct sysdesc *desc)
         }
 
         // Move past this entire structure (length is at 2nd byte).
-        pICLItem += pICLItem[1];
+        if (pICLItem[1] <= 0) {
+            break;
+        }
+
+        pICLItem += pICLItem[1];        
     } while (pICLItem - pICLStart < pMadt->desc.length);
 }
 
@@ -178,22 +183,25 @@ void acpi_init()
 
     if (rsdp->revision >= 2) {
         xsdt_enabled = true;
-        kprintf("XSDT is available but not yet supported.\n");
-        asm("hlt");
-        __builtin_unreachable();
-        //rsdt = (struct xsdt*)((uint64_t)rsdp->xsdt_addr + vmm_higher_half_offset);
+        xsdt = (struct xsdt*)((uint64_t)rsdp->xsdt_addr + vmm_higher_half_offset);
+        entry_size = (xsdt->length - 36) / 8;
     } else {
-        kprintf("XSDT is not available.\n");
         rsdt = (struct rsdt*)((uint64_t)rsdp->rsdt_addr + vmm_higher_half_offset);
+        entry_size = (rsdt->length - 36) / 4;
     }
 
-    // 36 bytes in fields up to entries, x bytes per entry.
-    rsdt_entry_count = (rsdt->length - 36) / (xsdt_enabled ? 8 : 4);
+    kprintf("Entry Size: %d\n", entry_size);
 
     // Walk the RSDT entries, looking for the APIC entry.
-    for (uint32_t i = 0; i < rsdt_entry_count; i++) {
+    for (uint32_t i = 0; i < entry_size; i++) {
         // Report entry.
-        struct sysdesc *desc = (struct sysdesc*)((uint64_t)rsdt->entries[i] + vmm_higher_half_offset);
+        struct sysdesc *desc = NULL;
+        
+        if (xsdt_enabled) {
+            desc = (struct sysdesc*)((uint64_t)xsdt->entries[i] + vmm_higher_half_offset);
+        } else {
+            desc = (struct sysdesc*)((uint64_t)rsdt->entries[i] + vmm_higher_half_offset);
+        }
 
         if (memcmp(desc->signature, SDT_APIC_HPET, 4) == 0) {
             hpet = (struct hpet*)desc;
