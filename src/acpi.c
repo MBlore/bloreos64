@@ -158,6 +158,8 @@ void _parse_madt(struct sysdesc *desc)
 
         // Move past this entire structure (length is at 2nd byte).
         if (pICLItem[1] <= 0) {
+            // It seems we need this length check on UEFI boots, it did work fine using the rsdp
+            // before which is from the BIOS boot.
             break;
         }
 

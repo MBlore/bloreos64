@@ -20,6 +20,14 @@
 
 #include <stdint.h>
 
+// PCI Configuration register offset values.
+#define PCI_REG0_OFFSET 0x0     // Device ID, VendorID
+#define PCI_REG1_OFFSET 0x4     // Status, Command
+#define PCI_REG2_OFFSET 0x8     // Class Code, Subclass, Prog IF, Revision ID
+#define PCI_REG3_OFFSET 0xC     // BIST, Header Type, Latency Timer, Cache Line Size
+#define PCI_REG4_OFFSET 0x10    // BAR0 Base Address
+#define PCI_REG5_OFFSET 0x14    // BAR1 Base Address
+
 struct pci_device {
     uint8_t class_code;
     uint8_t sub_class_code;
@@ -29,8 +37,6 @@ struct pci_device {
     uint8_t prog_if;
     const char* description;
     uint64_t address;
-    uint64_t bar0_address;
-    uint64_t bar1_address;
     uint32_t header_type;
 };
 
@@ -40,7 +46,7 @@ extern uint8_t pci_device_cnt;
 void pci_init();
 struct pci_device* pci_find_device(uint8_t class, uint8_t subclass);
 
-uint64_t pci_get_bar0_address();
-uint64_t pci_get_bar1_address();
+uint32_t pci_device_read(struct pci_device *dev, uint32_t offset, uint8_t size);
+void pci_device_write(struct pci_device *dev, uint32_t offset, uint8_t size, uint32_t val);
 
 #endif

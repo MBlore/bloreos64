@@ -102,6 +102,37 @@ uint32_t _pci_mm_read(uint8_t bus, uint8_t device, uint8_t function, uint32_t of
 }
 
 /*
+ * Read from PCI configuration for a PCI device.
+ * 'size' is in bytes, 1, 2, or 4.
+*/
+uint32_t pci_device_read(struct pci_device *dev, uint32_t offset, uint8_t size)
+{
+    return _pci_mm_read(dev->bus, dev->device, dev->function, offset, size);
+}
+
+/*
+ * Write to PCI configuration for a PCI device.
+ * 'size' is in bytes, 1, 2, or 4.
+*/
+void pci_device_write(struct pci_device *dev, uint32_t offset, uint8_t size, uint32_t val)
+{
+    uint64_t addr = mcfg->mmio_base + vmm_higher_half_offset + offset +
+        ((dev->bus - mcfg->start) << 20 | dev->device << 15 | dev->function << 12);
+
+    switch(size) {
+        case 1:
+            *(uint8_t*)addr = (uint8_t)val;
+            return;
+        case 2:
+            *(uint16_t*)addr = (uint16_t)val;
+            return;
+        case 4:
+            *(uint32_t*)addr = val;
+            return;
+    }
+}
+
+/*
  * Reads from PCI MM config for a devices vendor ID.
 */
 uint16_t _pci_mm_read_vendor_id(uint8_t bus, uint8_t device, uint8_t function)
@@ -171,8 +202,6 @@ void _check_function(uint8_t bus, uint8_t device, uint8_t function, uint16_t hea
     dev->device = device;
     dev->header_type = header_type;
     dev->address = mcfg->mmio_base + vmm_higher_half_offset + ((bus - mcfg->start) << 20 | device << 15 | function << 12);
-    dev->bar0_address = _pci_mm_read(bus, device, function, 0x10, 4) + vmm_higher_half_offset;
-    dev->bar1_address = _pci_mm_read(bus, device, function, 0x14, 4) + vmm_higher_half_offset;
 
     kprintf("PCI: %s\n", dev->description);
 }
