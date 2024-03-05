@@ -27,3 +27,5 @@ RedoxOS: https://gitlab.redox-os.org/redox-os/kernel/
 "PCI Express System Architecture by Tom Shanley, Don Anderson, Ravi Budruk, MindShare, Inc"
 
 PCI Specs: https://pc104.org/
+
+NVMe Specs: https://nvmexpress.org/specifications/

@@ -49,7 +49,6 @@ static inline bool bitmap_test(const void *bitmap, size_t bit) {
 /* Sets the bit at the specified location starting at the param 'bitmap' to 1 */
 static inline void bitmap_on(void *bitmap, size_t bit) {
     uint8_t *bitmap_u8 = (uint8_t*)bitmap;
-
     bitmap_u8[bit / 8] |= (1 << (bit % 8));
 }
 

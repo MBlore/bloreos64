@@ -28,6 +28,7 @@
 #include <atomic.h>
 #include <math.h>
 #include <bitmap.h>
+#include <kernel.h>
 
 spinlock_t lock = {0};
 
@@ -77,6 +78,16 @@ uint64_t vmm_higher_half_offset = 0;
 uint64_t allocation_cursor = 0;
 
 uint64_t num_pages_available = 0;
+
+// The PageEntry helps us determine how pages our allocations reserve when they do a kalloc.
+// This helps know how many pages to free when we come to free that memory.
+// At 4 bytes per entry, the cost of this metadata is approx. 2MB for a 2GB system.
+struct PageEntry {
+    uint32_t pages_allocated;  // Number of pages allocated starting at this entry.
+} __attribute__((packed));
+
+// Contains a PageEntry item per page in memory.
+struct PageEntry* entry_map;
 
 // GCC and Clang reserve the right to generate calls to the following
 // 4 functions even if they are not directly called.
@@ -146,7 +157,22 @@ int memcmp(const void *s1, const void *s2, size_t n)
     return 0;
 }
 
-void __get_free_pages()
+/*
+ * Prints the state of the bitmap at the specified indices.
+*/
+void _print_bitmap(uint64_t start, uint64_t len)
+{
+    kprintf("Bitmap (%d-%d): ", start, start+len);
+    for (uint64_t i = start; i < start+len; i++) {
+        kprintf(bitmap_test(page_bitmap, i) ? "1" : "0");
+    }
+    kprintf("\n");
+}
+
+/*
+ * Walks the memory map entries, setting the state of the bitmap with what it finds as usable memory. 
+*/
+void _get_free_pages()
 {
     kprintf("Searching for free memory pages...\n");
 
@@ -171,11 +197,40 @@ void __get_free_pages()
     }
 }
 
-void __create_page_bitmap()
+/*
+ * Finds memory to store the entry map, allocates it, and store a pointer to it.
+*/
+void _create_entry_map()
+{
+    uint64_t map_size = ALIGN_UP(sizeof(struct PageEntry) * num_pages_in_map, PAGE_SIZE);
+    kprintf("PageEntry Size: %lu bytes\n", map_size);
+
+    for (size_t i = 0; i < memmap->entry_count; i++) {
+        struct limine_memmap_entry *entry = memmap->entries[i];
+
+        if (entry->type != LIMINE_MEMMAP_USABLE) {
+            continue;
+        }
+
+        if (entry->length >= map_size) {
+            // We've got a spot, lets point there.
+            entry_map = (struct PageEntry*)(entry->base + vmm_higher_half_offset);
+
+            memset(entry_map, 0, map_size);
+
+            // Change the values in the limine map as this part of mem is now permanently allocated to our kernel.
+            entry->length -= map_size;
+            entry->base += map_size;
+            max_pages_available -= (map_size / PAGE_SIZE);
+            break;
+        }
+    }
+}
+
+void _create_page_bitmap()
 {
     // Convert page numbers (bits) to bytes (8 bits).
     // The block size for the bitmap aligns to the page size even though we might not need that much.
-
     uint64_t bitmap_size = ALIGN_UP(num_pages_in_map / 8, PAGE_SIZE);
 
     kprintf("Page Bitmap Size: %lu Kib\n", bitmap_size / 1024);
@@ -209,7 +264,7 @@ void __create_page_bitmap()
     }
 }
 
-void __init_stats()
+void _init_stats()
 {
     memmap = memmap_request.response;
     hhdm = hhdm_request.response;
@@ -240,34 +295,19 @@ void __init_stats()
     num_pages_in_map = map_size_bytes / PAGE_SIZE;
 }
 
-/*
-    Initialize the physical memory manager.
-*/
-void kmem_init()
-{
-    kprintf("Initialzing PMM...\n");
-
-    __init_stats();
-
-    kprintf("Total Memory: %lu Mib\n", total_memory_bytes / 1024 / 1024);
-    kprintf("Total Map Pages: %lu\n", num_pages_in_map);
-    kprintf("Total Pages Available: %lu\n", max_pages_available);
-    
-    __create_page_bitmap();
-
-    __get_free_pages();
-
-    kprintf("PMM initialized.\n");
-}
-
-inline void* __get_addr_from_page(uint64_t page)
+inline void* _get_addr_from_page(uint64_t page)
 {
     return (void*)(lowest_address + (page * PAGE_SIZE) + vmm_higher_half_offset);
 }
 
-void __reserve_pages(uint64_t startPage, uint64_t pages)
+inline uint64_t _get_page_from_addr(void* addr)
 {
-    for (uint64_t i = startPage; i < pages; i++) {
+    return ((uint64_t)addr - lowest_address - vmm_higher_half_offset) / PAGE_SIZE;
+}
+
+void _reserve_pages(uint64_t startPage, uint64_t pages)
+{
+    for (uint64_t i = startPage; i < startPage + pages; i++) {
         bitmap_on(page_bitmap, i);
     }
 }
@@ -322,10 +362,14 @@ void* kalloc(size_t numBytes)
             }
 
             // Reserve it in the map and return the location.
-            __reserve_pages(start_alloc_page, allocated_pages);
+            _reserve_pages(start_alloc_page, allocated_pages);
+            
+            // Update the entry map to track how many pages we allocated from here.
+            entry_map[start_alloc_page].pages_allocated = allocated_pages;
+
             num_pages_available -= allocated_pages;
             spinlock_unlock(&lock);
-            return __get_addr_from_page(start_alloc_page);
+            return _get_addr_from_page(start_alloc_page);
         }
 
         // Forward the cursor and bounds check.
@@ -353,6 +397,52 @@ void* kalloc(size_t numBytes)
     kprintf("PMM Allocation failed.\n");
 
     return NULL;
+}
+
+/*
+    Initialize the physical memory manager.
+*/
+void kmem_init()
+{
+    kprintf("Initialzing PMM...\n");
+
+    _init_stats();
+
+    kprintf("Total Memory: %lu Mib\n", total_memory_bytes / 1024 / 1024);
+    kprintf("Total Map Pages: %lu\n", num_pages_in_map);
+    kprintf("Total Pages Available: %lu\n", max_pages_available);
+    kprintf("Lowest Memory Addr: 0x%X\n", lowest_address);
+    
+    _create_page_bitmap();
+    _create_entry_map();
+    _get_free_pages();
+
+    kprintf("PMM initialized.\n");
+}
+
+/*
+ * Frees the pages allocated from a previous kalloc() call.
+*/
+void kfree(void *ptr)
+{
+    spinlock_lock(&lock);
+
+    uint64_t page_index = _get_page_from_addr(ptr);
+    
+    if (page_index >= max_pages_available) {
+        kprintf("*FATAL*: Page index lookup resulted in out of bounds value of %lu from address 0x%X.\n", page_index, ptr);
+        hcf();
+    }
+
+    // Turn off all the bits for all of the pages that were allocated.
+    for (uint64_t i = page_index; i < page_index + entry_map[page_index].pages_allocated; i++) {
+        bitmap_off(page_bitmap, i);
+    }
+
+    // Update the entry.
+    entry_map[page_index].pages_allocated = 0;
+
+    spinlock_unlock(&lock);
 }
 
 // Dumps contents of the specified memory location in char format.
