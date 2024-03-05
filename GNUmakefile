@@ -144,7 +144,8 @@ run: $(IMAGE_NAME).hdd
         -bios ovmf/OVMF.fd -boot d \
         -drive file=$(IMAGE_NAME).hdd,if=none,id=mydrive,format=raw \
         -device nvme,serial=1234,drive=mydrive,id=nvme0,num_queues=4 \
-        -serial file:logs/$(shell date +'%Y%m%d_%H%M%S').txt
+        -serial file:logs/$(shell date +'%Y%m%d_%H%M%S').txt \
+        -d int
 
 .PHONY: run-iso
 run-iso: $(IMAGE_NAME).iso
