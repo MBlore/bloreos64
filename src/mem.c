@@ -67,7 +67,7 @@ static uint64_t num_pages_in_map = 0;
 */
 static uint8_t *page_bitmap = NULL;
 
-/* The location in virtual memory to the higher-half */
+/* The location in virtual memory to the higher-half offset where the physical memory is mapped. */
 uint64_t vmm_higher_half_offset = 0;
 
 /*
@@ -397,6 +397,13 @@ void* kalloc(size_t numBytes)
     kprintf("PMM Allocation failed.\n");
 
     return NULL;
+}
+
+/*
+    Allocates a number of pages instead of bytes.
+*/
+void* kpalloc(size_t numPages) {
+    return kalloc(PAGE_SIZE * numPages);
 }
 
 /*

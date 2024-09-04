@@ -15,20 +15,11 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
+#ifndef _BLOREOS_VM_H
+#define _BLOREOS_VM_H
 
-#ifndef _BLOREOS_MATH_H
-#define _BLOREOS_MATH_H
+#include <stdint.h>
 
-/* Divide and round up e.g. 5 / 4 = 1.25 = 2 */
-#define DIV_ROUNDUP(val, div) (((val) + (div) - 1) / (div))
-
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-
-/* Aligns val to the next highest multiple of align, e.g. val 10 and align 8 results in 16 */
-#define ALIGN_UP(val, align) (((val) + (align) - 1) / (align)) * (align)
-
-#define IS_BIT_SET(var, pos) (((var) >> (pos)) & 1)
+void vm_init();
 
 #endif

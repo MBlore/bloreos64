@@ -295,7 +295,7 @@ int strcmp(const char *l, const char *r)
 }
 
 /*
-    Kernel log - currently writes to serial COM1.
+    Kernel log - currently writes to serial COM1 and the terminal.
 */
 void kprintf(const char format[], ...)
 {

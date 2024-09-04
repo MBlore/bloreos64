@@ -18,6 +18,18 @@
 #ifndef _BLOREOS_CPU_H
 #define _BLOREOS_CPU_H
 
+// Bit masks for CR4 register state flags
+#define CR4_PSE     0x10        // [4]
+#define CR4_PAE     0x20        // [5]   
+#define CR4_PGE     0x80        // [7]
+#define CR4_LA57    0x1000      // [12]
+#define CR4_PCIDE   0x20000     // [17]
+#define CR4_SMEP    0x100000    // [20]
+#define CR4_SMAP    0x200000    // [21]
+#define CR4_PKE     0x400000    // [22]
+#define CR4_CET     0x800000    // [23]
+#define CR4_PKS     0x1000000   // [24]
+
 #include <stdint.h>
 #include <str.h>
 #include <stdbool.h>
@@ -105,19 +117,48 @@ static inline uint64_t read_msr(uint32_t msr_id)
 
 /*
     Control registers, only available in ring-0.
+
     CR0 - System control flags
-        [31] - Paging enabled
+        [16] - WP
+        [31] - PG (Paging Enabled)
         [30] - Cache Disable
+
     CR1 - Reserved
     CR2 - Page fault address
     CR3 - Paging hierarchy address
+    
     CR4 - Extension flags
+        [4] - PSE
+        [5] - PAE
+        [7] - PGE
+        [12] - LA57
+        [17] - PCIDE
+        [20] - SMEP
+        [21] - SMAP
+        [22] - PKE
+        [23] - CET
+        [24] - PKS
+
     CR8 - Task Priority Register (TPR) priority threshold 
 */
 static inline uint64_t get_cr0()
 {
     uint64_t val;
     asm volatile ("movq %%cr0, %0" : "=r"(val) :: "memory");
+    return val;
+}
+
+static inline uint64_t get_cr3()
+{
+    uint64_t val;
+    asm volatile ("movq %%cr3, %0" : "=r"(val) :: "memory");
+    return val;
+}
+
+static inline uint64_t get_cr4()
+{
+    uint64_t val;
+    asm volatile ("movq %%cr4, %0" : "=r"(val) :: "memory");
     return val;
 }
 
@@ -129,6 +170,18 @@ static inline void cpuid(int code, uint32_t *a, uint32_t *d)
         : "O"(code)
         : "ebx", "ecx"
         );
+}
+
+static inline uint64_t get_address_widths()
+{
+    uint64_t eax = 0x80000008;
+    asm volatile (
+        "cpuid"
+        : "=a"(eax)
+        : "a" (eax)
+    );
+
+    return eax;
 }
 
 static inline int is_paging_enabled()
@@ -191,8 +244,6 @@ static inline bool set_interrupt_state(bool enabled)
 
     return state;
 }
-
-
 
 /*
  * Interrupt service routine state save.

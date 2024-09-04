@@ -25,6 +25,7 @@
 #include <cpu.h>
 #include <cpuid.h>
 #include <mem.h>
+#include <vm.h>
 #include <gdt.h>
 #include <idt.h>
 #include <ps2.h>
@@ -73,13 +74,8 @@ void kernel_main(void)
 
     kprintf("GDT/IDT initialized.\n");
 
-    if (is_paging_enabled()) {
-        kprintf("Paging enabled.\n");
-    } else {
-        kprintf("Paging disabled.\n");
-    }
-
     kmem_init();
+
     kprintf("PMM Available Pages: %lu\n", num_pages_available);
 
     acpi_init();
@@ -96,6 +92,8 @@ void kernel_main(void)
     
     q_keyboard = cqueue_create(200);
     ps2_init();
+
+    vm_init();
 
     // Kernal loop.
     while(1) {        

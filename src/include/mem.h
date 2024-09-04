@@ -33,6 +33,7 @@ extern uint64_t vmm_higher_half_offset;
 
 void kmem_init();
 void* kalloc(size_t numBytes);
+void* kpalloc(size_t numPages);
 void kfree(void *ptr);
 
 void memdumps(void *location, uint64_t len_bytes);
