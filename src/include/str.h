@@ -22,6 +22,18 @@
 #include <stddef.h>
 #include <stdarg.h>
 
+/*
+    Formatting symbols.
+
+    %c - single char
+    %d - int
+    %x - uint64 as hexadecimal
+    %X - uint64 as hexadecimal upper-case
+    %s - string
+    %lu - uint64
+    %ld - int64
+*/
+
 void reverse(char str[], size_t length);
 
 size_t itoa(int num, char str[], size_t base);

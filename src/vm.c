@@ -16,7 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 /*
-    This is the virtual memory manager, dealing with all things virtual and paging for the kernel and user processes.
+    This is the virtual memory manager, dealing with all things virtual and paging.
 */
 #include <vm.h>
 #include <str.h>
@@ -46,6 +46,63 @@ uint64_t *get_pdpt(uint64_t *pml4, uint64_t virt_addr)
 {
     uint64_t pml4e = pml4[PML4_INDEX(virt_addr)];
     return (uint64_t*)PHYS_TO_VIRT(pml4e & ~0xFFF);
+}
+
+uint64_t walk_page_table(uint64_t virt_addr)
+{
+    // Let's walk from the CR3 address which at the moment, is the Kernels virtual memory map.
+    // Meaning, the CR3 is the START of the entire virtual memory layout starting at the 4th level of paging.
+    // Note how the keys in to the tables are being extracted from the 'virt_addr'.
+
+    // No support for 1GB or 2MB pages.
+
+    uint64_t cr3 = get_cr3();
+
+    // According to the Intel SDM, bits 12 to 12+(MAXPHYADDR-1), so bits 12 to 51 in QEmu that reports a 40 MAXPHYADDR.
+    uint64_t addrmask = ((uint64_t)1 << maxphyaddr) - 1;
+    uint64_t pml4addr = (cr3 >> 12) & addrmask;
+    uint64_t *pml4 = (uint64_t*)PHYS_TO_VIRT(pml4addr);
+
+    // Get the PML4 entry for this virtual address. Since CR3 is the table for the 4th level, we index in to it using the
+    // index contained in the virtual address.
+    uint64_t pml4e = pml4[PML4_INDEX(virt_addr)];
+    if (!(pml4e & PAGE_PRESENT)) {
+        // Page not present halts the walking.
+        return 0;
+    }
+
+    // Now we can find the physical location of the next 3rd level (PDPT) table.
+    // Note: Applying the mask gets us the physical address as some bits are reserved.
+    uint64_t *pdpt = (uint64_t*)PHYS_TO_VIRT((pml4e >> 12) & addrmask);
+
+    // Now get the entry in the 3rd table.
+    uint64_t pdpte = pdpt[PDPT_INDEX(virt_addr)];
+    if (!(pdpte & PAGE_PRESENT)) {
+        return 0;
+    }
+
+    // Now we can find the physical location of the next 2nd level (PD) table.
+    uint64_t *pd = (uint64_t*)PHYS_TO_VIRT((pdpte >> 12) & addrmask);
+
+    // Now get the entry in the 2nd table.
+    uint64_t pde = pd[PD_INDEX(virt_addr)];
+    if (!(pde & PAGE_PRESENT)) {
+        return 0;
+    }
+
+    // On to the 1st level (PT) table.
+    uint64_t *pt = (uint64_t*)PHYS_TO_VIRT((pde >> 12) & addrmask);
+
+    // Now get the entry in the final table.
+    uint64_t pte = pt[PT_INDEX(virt_addr)];
+        
+    if (!(pte & PAGE_PRESENT)) {
+        return 0;
+    }
+
+    // Now we can get the actual physical address from the final PT entry.
+    uint64_t phys_addr = ((pte >> 12) & addrmask) | PAGE_OFFSET(virt_addr);
+    return phys_addr;
 }
 
 void vm_init()
@@ -105,54 +162,6 @@ void vm_init()
     maxlinaddr = val >> 8 & 0xFF;
     kprintf("MAXPHYADDR: %d bits\n", maxphyaddr);
     kprintf("MAXLINADDR: %d bits\n", maxlinaddr);
-}
 
-uint64_t walk_page_table(uint64_t virt_addr)
-{
-    // Let's walk from the CR3 address which at the moment, is the Kernels virtual memory map.
-    // Meaning, the CR3 is the START of the entire virtual memory layout starting at the 4th level of paging.
-    // Note how the keys in to the tables are being extracted from the 'virt_addr'.
-
-    uint64_t cr3 = get_cr3();
-    uint64_t *pml4 = (uint64_t*)PHYS_TO_VIRT(cr3);
-
-    // Get the PML4 entry for this virtual address. Since CR3 is the table for the 4th level, we index in to it using the
-    // index contained in the virtual address.
-    uint64_t pml4e = pml4[PML4_INDEX(virt_addr)];
-    if (!(pml4e & PAGE_PRESENT)) {
-        // Page not present halts the walking.
-        return 0;
-    }
-
-    // Now we can find the physical location of the next 3rd level (PDPT) table.
-    // Note: Applying the mask gets us the physical address as some bits are reserved.
-    uint64_t *pdpt = (uint64_t*)PHYS_TO_VIRT(pml4e & ~0xFFF); 
-
-    // Now get the entry in the 3rd table.
-    uint64_t pdpte = pdpt[PDPT_INDEX(virt_addr)];
-    if (!(pdpte & PAGE_PRESENT)) {
-        return 0;
-    }
-
-    // Now we can find the physical location of the next 2nd level (PD) table.
-    uint64_t *pd = (uint64_t*)PHYS_TO_VIRT(pdpte & ~0xFFF);
-
-    // Now get the entry in the 2nd table.
-    uint64_t pde = pd[PD_INDEX(virt_addr)];
-    if (!(pde & PAGE_PRESENT)) {
-        return 0;
-    }
-
-    // On to the 1st level (PT) table.
-    uint64_t *pt = (uint64_t*)PHYS_TO_VIRT(pde & ~0xFFF);
-
-    // Now get the entry in the final table.
-    uint64_t pte = pt[PT_INDEX(virt_addr)];
-    if (!(pte & PAGE_PRESENT)) {
-        return 0;
-    }
-
-    // Now we can get the actual physical address from the final PT entry.
-    uint64_t phys_addr = (pte & ~0xFFF) | PAGE_OFFSET(virt_addr);
-    return phys_addr;
+    walk_page_table(0);
 }
