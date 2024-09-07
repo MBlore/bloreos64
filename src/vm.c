@@ -24,6 +24,8 @@
 #include <math.h>
 #include <mem.h>
 
+#define PT_MASK         0xFFFFFFFFFF000;    // Helps extract the bits 
+
 #define PAGE_PRESENT    0x1
 #define PAGE_RW         0x2
 #define PAGE_USER       0x4
@@ -59,8 +61,13 @@ uint64_t walk_page_table(uint64_t virt_addr)
     uint64_t cr3 = get_cr3();
 
     // According to the Intel SDM, bits 12 to 12+(MAXPHYADDR-1), so bits 12 to 51 in QEmu that reports a 40 MAXPHYADDR.
-    uint64_t addrmask = ((uint64_t)1 << maxphyaddr) - 1;
-    uint64_t pml4addr = (cr3 >> 12) & addrmask;
+    // The Intel SDM says the address is page aligned (4096 bytes), which means that address of the table starts at bit 12 (max value of 12 bits is 4095 decimal).
+    // So we have to leave the table address starting at bit 12, up to bits 51, and zero out the lower 12 bits and the bits above 51,
+    // as these other bits just contains flags and reserved state.
+    uint64_t addrmask = (((uint64_t)1 << maxphyaddr) - 1) << 12;
+    char buff[72];
+
+    uint64_t pml4addr = cr3 & addrmask;
     uint64_t *pml4 = (uint64_t*)PHYS_TO_VIRT(pml4addr);
 
     // Get the PML4 entry for this virtual address. Since CR3 is the table for the 4th level, we index in to it using the
@@ -73,7 +80,7 @@ uint64_t walk_page_table(uint64_t virt_addr)
 
     // Now we can find the physical location of the next 3rd level (PDPT) table.
     // Note: Applying the mask gets us the physical address as some bits are reserved.
-    uint64_t *pdpt = (uint64_t*)PHYS_TO_VIRT((pml4e >> 12) & addrmask);
+    uint64_t *pdpt = (uint64_t*)PHYS_TO_VIRT(pml4e & addrmask);
 
     // Now get the entry in the 3rd table.
     uint64_t pdpte = pdpt[PDPT_INDEX(virt_addr)];
@@ -82,7 +89,7 @@ uint64_t walk_page_table(uint64_t virt_addr)
     }
 
     // Now we can find the physical location of the next 2nd level (PD) table.
-    uint64_t *pd = (uint64_t*)PHYS_TO_VIRT((pdpte >> 12) & addrmask);
+    uint64_t *pd = (uint64_t*)PHYS_TO_VIRT(pdpte & addrmask);
 
     // Now get the entry in the 2nd table.
     uint64_t pde = pd[PD_INDEX(virt_addr)];
@@ -91,7 +98,7 @@ uint64_t walk_page_table(uint64_t virt_addr)
     }
 
     // On to the 1st level (PT) table.
-    uint64_t *pt = (uint64_t*)PHYS_TO_VIRT((pde >> 12) & addrmask);
+    uint64_t *pt = (uint64_t*)PHYS_TO_VIRT(pde & addrmask);
 
     // Now get the entry in the final table.
     uint64_t pte = pt[PT_INDEX(virt_addr)];
@@ -101,7 +108,9 @@ uint64_t walk_page_table(uint64_t virt_addr)
     }
 
     // Now we can get the actual physical address from the final PT entry.
-    uint64_t phys_addr = ((pte >> 12) & addrmask) | PAGE_OFFSET(virt_addr);
+    // We get the offset bits from the virt_addr (12 bits), and put them in the lower
+    // 12 bits of the phys_addr that the mask zero'd out.
+    uint64_t phys_addr = (pte & addrmask) | PAGE_OFFSET(virt_addr);
     return phys_addr;
 }
 

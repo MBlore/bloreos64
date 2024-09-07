@@ -328,15 +328,15 @@ void sprint_binary8(char buff[], uint8_t ch)
 /*
  * Prints the specified uint32_t to a char buffer in binary form.
  * buff must be at least 18 bytes.
- * Bits printed right-to-left, "01100110 01100110 01100110 01100110".
+ * Bits printed right-to-left.
 */
-void sprint_binary16(char buff[], uint32_t ch)
+void sprint_binary16(char buff[], uint16_t ch)
 {
     buff[17] = '\0';
     int bitIndex, charIndex = 0;
 
     for (bitIndex = 0; bitIndex < 16; bitIndex++) {
-        buff[charIndex++] = (ch & (1u << (15 - bitIndex))) ? '1' : '0';
+        buff[charIndex++] = ((ch << bitIndex) & 0x8000) ? '1' : '0';
 
         if ((bitIndex + 1) % 8 == 0 && bitIndex != 15) {
             buff[charIndex++] = ' ';
@@ -347,7 +347,7 @@ void sprint_binary16(char buff[], uint32_t ch)
 /*
  * Prints the specified uint32_t to a char buffer in binary form.
  * buff must be at least 36 bytes.
- * Bits printed right-to-left, "01100110 01100110 01100110 01100110".
+ * Bits printed right-to-left.
 */
 void sprint_binary32(char buff[], uint32_t ch)
 {
@@ -355,7 +355,7 @@ void sprint_binary32(char buff[], uint32_t ch)
     int bitIndex, charIndex = 0;
 
     for (bitIndex = 0; bitIndex < 32; bitIndex++) {
-        buff[charIndex++] = (ch & (1u << (31 - bitIndex))) ? '1' : '0';
+        buff[charIndex++] = ((ch << bitIndex) & 0x80000000) ? '1' : '0';
 
         if ((bitIndex + 1) % 8 == 0 && bitIndex != 31) {
             buff[charIndex++] = ' ';
@@ -366,15 +366,15 @@ void sprint_binary32(char buff[], uint32_t ch)
 /*
  * Prints the specified uint32_t to a char buffer in binary form.
  * buff must be at least 72 bytes.
- * Bits printed right-to-left, "01100110 01100110 01100110 01100110".
+ * Bits printed right-to-left.
 */
-void sprint_binary64(char buff[], uint32_t ch)
+void sprint_binary64(char buff[], uint64_t ch)
 {
     buff[71] = '\0';
     int bitIndex, charIndex = 0;
 
     for (bitIndex = 0; bitIndex < 64; bitIndex++) {
-        buff[charIndex++] = (ch & (1u << (63 - bitIndex))) ? '1' : '0';
+        buff[charIndex++] = ((ch << bitIndex) & 0x8000000000000000) ? '1' : '0';
 
         if ((bitIndex + 1) % 8 == 0 && bitIndex != 63) {
             buff[charIndex++] = ' ';
