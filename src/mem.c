@@ -400,7 +400,7 @@ void* kalloc(size_t numBytes)
 }
 
 /*
-    Allocates a number of pages instead of bytes.
+    Allocates a number of contiguous pages.
 */
 void* kpalloc(size_t numPages) {
     return kalloc(PAGE_SIZE * numPages);

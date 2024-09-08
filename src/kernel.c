@@ -25,6 +25,7 @@
 #include <cpu.h>
 #include <cpuid.h>
 #include <mem.h>
+#include <alloc.h>
 #include <vm.h>
 #include <gdt.h>
 #include <idt.h>
@@ -94,6 +95,10 @@ void kernel_main(void)
     ps2_init();
 
     vm_init();
+
+    for (int i = 0; i < 20; i++) {
+        malloc(500);
+    }
 
     // Kernal loop.
     while(1) {        
