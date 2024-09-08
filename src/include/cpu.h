@@ -172,7 +172,7 @@ static inline void cpuid(int code, uint32_t *a, uint32_t *d)
         );
 }
 
-static inline uint64_t get_address_widths()
+static inline uint64_t cpu_get_address_widths()
 {
     uint64_t eax = 0x80000008;
     asm volatile (

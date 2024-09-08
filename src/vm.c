@@ -24,8 +24,6 @@
 #include <math.h>
 #include <mem.h>
 
-#define PT_MASK         0xFFFFFFFFFF000;    // Helps extract the bits 
-
 #define PAGE_PRESENT    0x1
 #define PAGE_RW         0x2
 #define PAGE_USER       0x4
@@ -44,14 +42,15 @@
 uint32_t maxphyaddr;
 uint32_t maxlinaddr;
 
-uint64_t *get_pdpt(uint64_t *pml4, uint64_t virt_addr)
-{
-    uint64_t pml4e = pml4[PML4_INDEX(virt_addr)];
-    return (uint64_t*)PHYS_TO_VIRT(pml4e & ~0xFFF);
-}
-
+/*
+    Given a virtual address, walks the page tables stored at CR3 to resolve the address to a physical address.
+*/
 uint64_t walk_page_table(uint64_t virt_addr)
 {
+    // virt_addr layout:
+    //  47:39     38:30   29:21  20:12  11:0
+    // |  PML4  |  PDPT  |  PD  |  PT  | Offset |
+
     // Let's walk from the CR3 address which at the moment, is the Kernels virtual memory map.
     // Meaning, the CR3 is the START of the entire virtual memory layout starting at the 4th level of paging.
     // Note how the keys in to the tables are being extracted from the 'virt_addr'.
@@ -65,8 +64,6 @@ uint64_t walk_page_table(uint64_t virt_addr)
     // So we have to leave the table address starting at bit 12, up to bits 51, and zero out the lower 12 bits and the bits above 51,
     // as these other bits just contains flags and reserved state.
     uint64_t addrmask = (((uint64_t)1 << maxphyaddr) - 1) << 12;
-    char buff[72];
-
     uint64_t pml4addr = cr3 & addrmask;
     uint64_t *pml4 = (uint64_t*)PHYS_TO_VIRT(pml4addr);
 
@@ -139,34 +136,8 @@ void vm_init()
         kprintf("5-level paging mode.\n");
     }
 
-    /*
-        Page Directory Pointer Table Entry (PDPTE)
-        [0] - Present - Must be 1 to reference a page directory.
-        [2:1] - Reserved (must be 0).
-        [3] - Page-level write-through.
-        [4] - Page-level cache disable
-        [8:5] - Reserved (must be 0)
-        [11:9] - Ignored
-        [M-1:12] - Physical address of a 4KB aligned page directory referenced by this entry.
-        [63:M] - Reserved (must be 0)
-
-        M is an abbreviation for MAXPHYADDR, ,which is at most 52.
-    */
-    /*
-        • CPUID.80000008H:EAX[7:0] reports the physical-address width supported by the processor. (For processors
-            that do not support CPUID function 80000008H, the width is generally 36 if CPUID.01H:EDX.PAE [bit 6] = 1
-            and 32 otherwise.) This width is referred to as MAXPHYADDR. MAXPHYADDR is at most 52.
-        CPUID.80000008H:EAX[15:8] reports the linear-address width supported by the processor. Generally, this
-        value is reported as follows:
-        — If CPUID.80000001H:EDX.LM [bit 29] = 0, the value is reported as 32.
-        — If CPUID.80000001H:EDX.LM [bit 29] = 1 and CPUID.(EAX=07H,ECX=0):ECX.LA57 [bit 16] = 0, the
-        value is reported as 48.
-        — If CPUID.(EAX=07H,ECX=0):ECX.LA57 [bit 16] = 1, the value is reported as 57.
-        (Processors that do not support CPUID function 80000008H, support a linear-address width of 32.)
-    */
-
     // Report address widths.
-    uint64_t val = get_address_widths();
+    uint64_t val = cpu_get_address_widths();
     maxphyaddr = val & 0xFF;
     maxlinaddr = val >> 8 & 0xFF;
     kprintf("MAXPHYADDR: %d bits\n", maxphyaddr);
