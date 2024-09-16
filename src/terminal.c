@@ -223,7 +223,7 @@ void _render_input_line()
     input_render_x = 0;
     input_render_y = render_x > 0 ? render_y + glyph_height : render_y;
 
-    char buffer[] = "cmd> ";
+    char buffer[] = "# ";
 
     char *ch = &buffer[0];
 
@@ -377,7 +377,7 @@ void term_keyevent(KeyEvent_t *ke)
 {
     if (ke->event_type == PS2_KEYDOWN && ke->scan_code == PS2_SCANCODE_ENTER) {
         // Process the input buffer.
-        tprintf("cmd> ");
+        tprintf("# ");
         tprintf(input_str); // Echo the command to the output.
         tprintf("\n");
         _handle_cmd();

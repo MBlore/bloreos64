@@ -182,7 +182,18 @@ void _get_free_pages()
         struct limine_memmap_entry *entry = memmap->entries[i];
 
         if (entry->type != LIMINE_MEMMAP_USABLE) {
+            kprintf(
+                "Memory Region Unusable: type %d, %d pages (%d mb)\n",
+                entry->type,
+                entry->length / PAGE_SIZE,
+                entry->length / 1024 / 1024);
+
             continue;
+        } else {
+            kprintf(
+                "Memory Region Usable: %d pages (%d mb)\n",
+                entry->length / PAGE_SIZE,
+                entry->length / 1024 / 1024);
         }
 
         // Find the page this entry refers to in our bitmap.
@@ -195,6 +206,41 @@ void _get_free_pages()
             num_pages_available++;
         }
     }
+}
+
+/*
+    Finds space in the first memory map we can find and allocate space from it, adjusting
+    the limine mem map entry. 'length' is rounded up to the nearest page size.
+*/
+void* memmap_alloc(size_t length)
+{
+    uint64_t size = ALIGN_UP(length, PAGE_SIZE);
+
+    for (size_t i = 0; i < memmap->entry_count; i++) {
+        struct limine_memmap_entry *entry = memmap->entries[i];
+
+        if (entry->type != LIMINE_MEMMAP_USABLE) {
+            continue;
+        }
+
+        if (entry->length >= size) {
+            // We've got a spot, lets point there.
+            void *pData = (void*)(entry->base + vmm_higher_half_offset);
+
+            memset(pData, 0, size);
+
+            // Change the values in the limine map as this part of mem is now permanently allocated to our kernel.
+            entry->length -= size;
+            entry->base += size;
+            max_pages_available -= (size / PAGE_SIZE);
+            
+            return pData;
+        }
+    }
+
+    kprintf("Couldn't allocate memory!");
+    hcf();
+    return 0;
 }
 
 /*
@@ -421,7 +467,10 @@ void kmem_init()
     kprintf("Lowest Memory Addr: 0x%X\n", lowest_address);
     
     _create_page_bitmap();
-    _create_entry_map();
+    
+    // Allocate memory for the page entry entries.
+    entry_map = (struct PageEntry*)memmap_alloc(ALIGN_UP(sizeof(struct PageEntry) * num_pages_in_map, PAGE_SIZE));
+
     _get_free_pages();
 
     kprintf("PMM initialized.\n");

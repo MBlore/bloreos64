@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <queue.h>
 #include <mem.h>
+#include <alloc.h>
 #include <stdbool.h>
 #include <str.h>
 #include <kernel.h>
@@ -32,7 +33,7 @@ CQueue_t* cqueue_create(uint32_t len)
 {
     // Allocate the struct and buffer next to each other to ensure
     // at least a single page is used in the PMM.
-    char *mem = kalloc(sizeof(CQueue_t) + (sizeof(uint32_t) * len));
+    char *mem = (char*)malloc(sizeof(CQueue_t) + (sizeof(uint32_t) * len));
 
     CQueue_t *q = (CQueue_t*)mem;
     uint32_t *buff = (uint32_t*)&mem[sizeof(CQueue_t)];

@@ -17,7 +17,20 @@
 */
 #include <alloc.h>
 #include <bump.h>
+#include <slob.h>
 #include <str.h>
+
+#ifdef ALLOC_USESLOB
+void *malloc(size_t size)
+{
+    return slob_malloc(size);
+}
+
+void free(void *ptr)
+{
+    slob_free(ptr);
+}
+#endif
 
 #ifdef ALLOC_USEBUMP
 void *malloc(size_t size)
@@ -28,14 +41,6 @@ void *malloc(size_t size)
 void free(void *ptr)
 {
     bump_free(ptr);
-}
-#else
-void *malloc(size_t size)
-{
-    return 0;   
-}
-void free(void *ptr)
-{
 }
 #endif
 

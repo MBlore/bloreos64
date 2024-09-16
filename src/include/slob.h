@@ -15,15 +15,14 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_ALLOC_H
-#define _BLOREOS_ALLOC_H
+#ifndef _BLOREOS_SLOB_H
+#define _BLOREOS_SLOB_H
 
 #include <stddef.h>
 
-//#define ALLOC_USEBUMP
-#define ALLOC_USESLOB
+void slob_init();
+void *slob_malloc(size_t size);
+void slob_free(void *ptr);
 
-void *malloc(size_t size);
-void free(void *ptr);
 
 #endif

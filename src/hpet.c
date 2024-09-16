@@ -70,16 +70,19 @@ static inline void hpet_write(uint64_t offset, uint64_t val)
     *((volatile uint64_t*)((char*)base_addr + offset)) = val;
 }
 
+
+
 void hpet_init()
 {
     kprintf("HPET Initializing...\n");
 
+#ifdef HPET_DEBUG
     kprintf("HPET ACPI Config:\n");
     kprintf("  HPET Comparator Count: %d\n", hpet->comparator_count);
     kprintf("  HPET Counter Size: %d\n", hpet->counter_size);
     kprintf("  HPET Min Tick: %d\n", hpet->minimum_tick);
     kprintf("  HPET Legacy Replacement: %d\n", hpet->legacy_replacement);
-
+#endif
     base_addr = (volatile uint64_t*)(hpet->address.address + vmm_higher_half_offset);
     kprintf("  Base: 0x%X\n", base_addr);
 
@@ -116,11 +119,12 @@ void hpet_init()
     uint32_t routing_caps = (uint32_t)(*timer_config >> 32);
     char buff[36];
     sprint_binary32(buff, routing_caps);
+#ifdef HPET_DEBUG
     kprintf("HPET Timer 0 Allowed Interrupt Routing: %s\n", buff);
 
     kprintf("HPET Timer 0 - Periodic: %d\n", *timer_config >> 4 & 1);
     kprintf("HPET Timer 0 - 64-Bit Mode: %d\n", *timer_config >> 5 & 1);
-
+#endif
     // Set I/O APIC routing.
     uint8_t selected_ioapic_input = 0;  // Max value is 32.
     *timer_config |= (selected_ioapic_input << 9);

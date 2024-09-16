@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <acpi.h>
 #include <mem.h>
+#include <alloc.h>
 
 struct pci_device *pci_devices[32];
 uint8_t pci_device_cnt = 0;
@@ -191,7 +192,7 @@ void _check_function(uint8_t bus, uint8_t device, uint8_t function, uint16_t hea
     uint8_t progif = _pci_mm_read_prog_if(bus, device, function);
 
     // Create the new device and store it in the device list.
-    struct pci_device *dev = kalloc(sizeof(struct pci_device));
+    struct pci_device *dev = (struct pci_device*)malloc(sizeof(struct pci_device));
     pci_devices[pci_device_cnt++] = dev;
     dev->class_code = classcode;
     dev->sub_class_code = subclass;

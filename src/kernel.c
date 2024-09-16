@@ -25,6 +25,7 @@
 #include <cpu.h>
 #include <cpuid.h>
 #include <mem.h>
+#include <slob.h>
 #include <alloc.h>
 #include <vm.h>
 #include <gdt.h>
@@ -76,6 +77,7 @@ void kernel_main(void)
     kprintf("GDT/IDT initialized.\n");
 
     kmem_init();
+    slob_init();
 
     kprintf("PMM Available Pages: %lu\n", num_pages_available);
 
@@ -96,10 +98,17 @@ void kernel_main(void)
 
     vm_init();
 
+    /*
     for (int i = 0; i < 20; i++) {
-        malloc(500);
+        void *pData = malloc(10000);
+        kprintf("pData: 0x%X\n", pData);
+        free(pData);
     }
 
+    void *pData = malloc(10009);
+    kprintf("pData: 0x%X\n", pData);
+    */
+   
     // Kernal loop.
     while(1) {        
         // Check if we have any keyboard events.
