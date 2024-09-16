@@ -89,7 +89,7 @@ void *slob_malloc(size_t size)
     struct SlobEntry *pNext = pHead;
     while(pNext != 0) {
 
-        if (size <= pNext->length) {
+        if (size + sizeof(struct SlobHeader) <= pNext->length) {
             // Found an entry that can fit our request, lets split the node.
             uint64_t totalSize = sizeof(struct SlobHeader) + size;
             
