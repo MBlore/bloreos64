@@ -82,13 +82,10 @@ void slob_init()
 void *slob_malloc(size_t size)
 {
     if (_init == 0) {
-        kprintf("Initializing SLOB...\n");
         slob_init();
         _init = 1;
     }
     
-    kprintf("slob_malloc: Finding entry for size %d...\n", size);
-
     struct SlobEntry *pNext = pHead;
     while(pNext != 0) {
 
@@ -126,7 +123,6 @@ void *slob_malloc(size_t size)
 */
 void slob_free(void *ptr)
 {
-    kprintf("slob_free():\n");
     // TODO: Need a spinklock to protect the structure change for multi-core.
 
     // Grab the header from the previous bytes of this memory location.
@@ -136,8 +132,6 @@ void slob_free(void *ptr)
     struct SlobEntry *pEntry = (struct SlobEntry*)slob_malloc(sizeof(struct SlobEntry));
     pEntry->base = (uint64_t)pHeader - vmm_higher_half_offset;
     pEntry->length = pHeader->length;
-
-    kprintf("slob_free: Created new entry at size %d\n", pHeader->length);
 
     // Pre-pend the new entry to the list.
     pEntry->pNext = pHead;
