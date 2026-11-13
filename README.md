@@ -14,3 +14,14 @@ mtools
 xorriso
 gdisk
 qemu
+ovmf
+
+# Setup
+
+mkdir -p logs
+mkdir -p iso_root
+mkdir -p ovmf
+cp /usr/share/OVMF/OVMF_CODE_4M.fd ovmf/OVMF.fd
+cp /usr/share/qemu/OVMF.fd ovmf/OVMF.fd
+make
+make run
