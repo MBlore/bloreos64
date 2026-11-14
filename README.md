@@ -19,6 +19,9 @@ gdb
 
 # Setup
 
+git clone --recurse-submodules https://github.com/MBlore/bloreos64.git
+(or run 'git submodule update --init --recursive' if you've already cloned it)
+cd bloreos64
 mkdir -p logs
 mkdir -p iso_root
 mkdir -p ovmf
