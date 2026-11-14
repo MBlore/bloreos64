@@ -108,25 +108,29 @@ void kernel_main(void)
     kprintf("pData: 0x%X\n", pData);
     */
    
-    // Kernal loop.
-    while(1) {        
-        // Check if we have any keyboard events.
-        if (q_keyboard->num_items > 0) {
+    // Process pending events or idle until an interrupt occurs.
+    while(1) {
+        disable_interrupts();
 
-            // We can't let an ISR interrupt the read which would double lock inside
-            // the cqueue. Because the keyboard ISR puts items in this queue using its lock.
-            disable_interrupts();
-            uint32_t scanCode = cqueue_read(q_keyboard);
-            enable_interrupts();
+        // If there are no pending events, enter the CPU idle state.
+        // Calling 'sti' here enables interrupts right before halting which solves
+        // an interrupt race condition.
+        if (q_keyboard->num_items == 0) {
+            __asm__ volatile("sti\n\thlt" ::: "memory");
+            continue;
+        }
 
-            if (scanCode >= 256) {
-                continue;
-            }
+        uint32_t scanCode = cqueue_read(q_keyboard);
 
-            KeyEvent_t *pKE = scancode_map[scanCode];
-            if (pKE != NULL) {
-                term_keyevent(pKE);
-            }
+        enable_interrupts();
+
+        if (scanCode >= 256) {
+            continue;
+        }
+
+        KeyEvent_t *pKE = scancode_map[scanCode];
+        if (pKE != NULL) {
+            term_keyevent(pKE);
         }
     }
 
