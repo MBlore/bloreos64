@@ -26,6 +26,17 @@ bin/test_mem: test_mem.c $(UNITY_SRC) $(MEM_SRC) $(MEM_MOCKS) mocks/kernel.h
 		-ffreestanding \
 		$(UNITY_SRC) $(MEM_SRC) $(MEM_MOCKS) $< \
 		-o $@
+
+# Virtual memory manager test dependencies.
+VM_SRC := ../src/vm.c
+VM_MOCKS := mocks/mock_str.c
+
+bin/test_vm: test_vm.c $(UNITY_SRC) $(VM_SRC) $(VM_MOCKS) mocks/cpu.h
+	mkdir -p bin
+	$(HOST_CC) $(HOST_CFLAGS) -Imocks $(INCLUDES) \
+		-ffreestanding \
+		$(UNITY_SRC) $(VM_SRC) $(VM_MOCKS) $< \
+		-o $@
 		
 # Compile each test suite into a separate executable.
 bin/%: %.c $(UNITY_SRC)

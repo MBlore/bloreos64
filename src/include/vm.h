@@ -22,4 +22,8 @@
 
 void vm_init();
 
+// Translate a virtual address into a physical address.
+// Returns false on failure, leaving phys_addr unchanged.
+bool vm_translate(uint64_t virt_addr, uint64_t *phys_addr);
+
 #endif
