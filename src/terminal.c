@@ -26,6 +26,7 @@
 #include <cpu.h>
 #include <atomic.h>
 #include <idt.h>
+#include <time.h>
 
 typedef struct {
     uint16_t magic;         // Magic bytes for identification.
@@ -362,9 +363,17 @@ void _handle_cmd()
     } else if (strcmp(input_str, "cls") == 0) {
         term_clear();
     } else if (strcmp(input_str, "time") == 0) {
-        tprintf("Kernel Time: %lus\n", kernel_timer_secs);
+        tprintf("Kernel Time: %lums\n", time_get_uptime_ms());
     } else if (strcmp(input_str, "stime") == 0) {
-        tprintf("Kernel Time: %lumins\n", kernel_timer_secs / 60);
+        tprintf("Kernel Time: %lusecs\n", time_get_uptime_ms() / 1000);
+    } else if (strcmp(input_str, "sleep") == 0) {
+        uint64_t before = time_get_uptime_ms();
+
+        time_sleep_ms(60000);
+
+        uint64_t after = time_get_uptime_ms();
+
+        tprintf("Elapsed: %d ms\n", after - before);
     } else {
         tprintf("Unknown command.\n");
     }

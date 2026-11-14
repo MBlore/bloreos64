@@ -35,6 +35,34 @@
 #define HPET_REG_TIMER_COMP         0x108
 #define HPET_REG_TIMER_COMP_SIZE    0x20
 
+// HPET Timer Configuration Register, bit 2:
+// Enables interrupt generation for this timer.
+#define HPET_TIMER_INT_ENABLE (1ULL << 2)
+
+// HPET Timer Configuration Register, bit 3:
+// 0 = One-shot mode
+// 1 = Periodic mode
+#define HPET_TIMER_PERIODIC (1ULL << 3)
+
+/*
+ * HPET Timer Configuration Register:
+ * Bits 9-13 select the I/O APIC interrupt route.
+ *
+ * The selected route must be supported by the timer's
+ * interrupt routing capabilities (bits 32-63).
+ */
+#define HPET_TIMER_ROUTE_SHIFT 9U
+#define HPET_TIMER_ROUTE_MASK  (0x1FULL << HPET_TIMER_ROUTE_SHIFT)
+
+#define HPET_IOAPIC_FLAGS 0x5U
+
+/*
+ * HPET Timer Configuration Register, bit 1:
+ * 0 = Edge-triggered interrupt
+ * 1 = Level-triggered interrupt
+ */
+#define HPET_TIMER_INT_TYPE (1ULL << 1)
+
 struct hpet_regs {
     volatile uint64_t capabilities;      // Read-Only
     volatile uint64_t reserved1;
@@ -50,12 +78,12 @@ volatile uint64_t *hpet_main_counter = 0;
 uint64_t hpet_frequency;
 volatile uint64_t _ticks;       // How many times the timer interrupt has fired.
 
-uint64_t* _timer_config_reg(uint32_t n)
+volatile uint64_t* _timer_config_reg(uint32_t n)
 {
     return (uint64_t*)((char*)base_addr + (HPET_REG_TIMER_CFG + (HPET_REG_TIMER_SIZE * n)));
 }
 
-uint64_t* _timer_comparator_reg(uint32_t n)
+volatile uint64_t* _timer_comparator_reg(uint32_t n)
 {
     return (uint64_t*)((char*)base_addr + (HPET_REG_TIMER_COMP + (HPET_REG_TIMER_COMP_SIZE * n)));
 }
@@ -90,12 +118,18 @@ void hpet_init()
     hpet_main_counter = (volatile uint64_t*)((char*)base_addr + HPET_REG_MAIN_COUNTER);
 
     kprintf("HPET Capabilites:\n");
-    uint64_t numTimers = (hpet_regs->capabilities >> 8) & 0x1F;
+    uint64_t numTimers = ((hpet_regs->capabilities >> 8) & 0x1F) + 1;
     kprintf("  HPET Num Timers: %d\n", numTimers);
     kprintf("  HPET Legacy Route Capable: %d\n", (hpet_regs->capabilities >> 15) & 1);
     kprintf("  HPET 64-Bit Counter: %d\n", (hpet_regs->capabilities >> 13) & 1);
     uint32_t tick_period = (uint32_t)(hpet_regs->capabilities >> 32);
     kprintf("  HPET Tick Period: %d\n", tick_period);
+
+    // The HPET counter period must be non-zero.
+    if (tick_period == 0) {
+        kprintf("HPET: Invalid tick period\n");
+        return;
+    }
 
     hpet_frequency = FEMTOSECS_PER_SEC / tick_period;
     kprintf("  HPET Frequency: %d\n", hpet_frequency);
@@ -126,47 +160,108 @@ void hpet_init()
     kprintf("HPET Timer 0 - 64-Bit Mode: %d\n", *timer_config >> 5 & 1);
 #endif
     // Set I/O APIC routing.
-    uint8_t selected_ioapic_input = 0;  // Max value is 32.
-    *timer_config |= (selected_ioapic_input << 9);
+    uint8_t selected_ioapic_input = 2;  // // Temporary: QEMU's supported GSI 2.
 
-    // Enable periodic timer mode (default).
-    *timer_config |= (1 << 3);
+    /*
+     * Each bit in routing_caps identifies a supported
+     * interrupt route. Bit N corresponds to GSI N.
+     *
+     * Reject routes that the HPET cannot generate.
+     */
+    if (!(routing_caps & (1U << selected_ioapic_input))) {
+        kprintf("HPET: Selected interrupt route is unsupported\n");
+        return;
+    }
+
+    /*
+     * Verify that an I/O APIC handles the selected GSI.
+     *
+     * HPET support alone does not guarantee that an
+     * I/O APIC exists for this interrupt route.
+     */
+    if (!ioapic_supports_gsi(selected_ioapic_input)) {
+        kprintf("HPET: No I/O APIC handles the selected GSI\n");
+        return;
+    }
+
+    *timer_config &= ~HPET_TIMER_ROUTE_MASK;
+    *timer_config |= ((uint64_t)selected_ioapic_input << HPET_TIMER_ROUTE_SHIFT);
+
+    // Start Timer 0 in one-shot mode.
+    *timer_config &= ~HPET_TIMER_PERIODIC;
+
+    // Use edge-triggered interrupts to match our IOAPIC configuration.
+    *timer_config &= ~HPET_TIMER_INT_TYPE;
 
     // Allow setting the accumulator.
     //*timer_config |= (1 << 6);
 
-    // Enable interrupts.
-    *timer_config |= (1 << 2);
+    /*
+     * Keep Timer 0 interrupts disabled during initialisation.
+     *
+     * hpet_one_shot() will enable them after programming
+     * the comparator.
+     */
+    *timer_config &= ~HPET_TIMER_INT_ENABLE;
 
-    // Set the IRQ IDT handler.
-    ioapic_redirect_irq(bsp_lapic_id, TIMER_VECTOR, 0, true);
+    /*
+     * HPET uses a directly selected Global System Interrupt (GSI).
+     * Flags 0x5:
+     *   Bits 0-1 = 01 (active-high polarity)
+     *   Bits 2-3 = 01 (edge-triggered)
+     */
+    if (!ioapic_redirect_gsi(
+            bsp_lapic_id,
+            TIMER_VECTOR,
+            selected_ioapic_input,
+            HPET_IOAPIC_FLAGS,
+            true)) {
+        kprintf("HPET: Failed to configure interrupt routing\n");
+        return;
+    }
+
+    kprintf("HPET: Timer 0 routed to GSI %d\n", selected_ioapic_input);
 
     _ticks = 0;
+    
+    /*
+     * Start the HPET main counter as a continuous clock source.
+     *
+     * The counter should run throughout the lifetime of the
+     * kernel, independently of timer interrupt generation.
+     */
+    *hpet_main_counter = 0;
+    hpet_enable();
 }
 
 /*
- * Initialize timer 0 in one shot mode and start it.
-*/
+ * Configure Timer 0 to generate a single interrupt after
+ * the specified number of milliseconds.
+ *
+ * The main counter continues running uninterrupted.
+ */
 void hpet_one_shot(uint64_t ms)
 {
-    #ifdef HPET_DEBUG
-    kprintf("hpet_one_shot()\n");
-    #endif
-    hpet_reset();
-
-    // Reset the main counter to 0 for the next one-shot.
-    *hpet_main_counter = 0;
-
     volatile uint64_t *timer_config = _timer_config_reg(0);
-    *timer_config &= ~(1 << 3); // One shot mode.
+    volatile uint64_t *timer_comp = _timer_comparator_reg(0);
 
-    // Set the comparator value.
-    volatile uint64_t* timer_comp = _timer_comparator_reg(0);
-    *timer_comp = (uint64_t)((hpet_frequency / 1000) * ms);
+    // Disable timer interrupts while configuring the comparator.
+    *timer_config &= ~HPET_TIMER_INT_ENABLE;
 
-    *timer_config |= (1 << 2);      // Enable timer interrupts.
+    // Reset the software interrupt counter.
+    _ticks = 0;
 
-    hpet_enable();
+    // Configure one-shot mode.
+    *timer_config &= ~HPET_TIMER_PERIODIC;
+
+    // Calculate the number of ticks required for the delay.
+    uint64_t duration = (hpet_frequency / 1000) * ms;
+
+    // Set the comparator relative to the current main counter.
+    *timer_comp = hpet_get_counter() + duration;
+
+    // Enable timer interrupts.
+    *timer_config |= HPET_TIMER_INT_ENABLE;
 }
 
 /* 
@@ -211,7 +306,7 @@ void hpet_ack()
     // Edge mode (default):
     //   (Optional) Write 0 to the timer position n.
     //regs->interrupt_status |= 1;
-    hpet_regs->interrupt_status &= ~((uint64_t)1);
+    hpet_regs->interrupt_status = 1ULL;
 }
 
 /*
@@ -228,7 +323,9 @@ void hpet_sleep(uint64_t ms)
     // Wait until the ISR fires and we see a tick.
     while(_ticks == 0);
     
-    hpet_disable();
+    // Disable Timer 0 interrupts, but keep the HPET main counter running.
+    volatile uint64_t *timer_config = _timer_config_reg(0);
+    *timer_config &= ~HPET_TIMER_INT_ENABLE;
 }
 
 /*
@@ -237,17 +334,14 @@ void hpet_sleep(uint64_t ms)
 */
 void hpet_sleep_counter(uint64_t ms)
 {
-    hpet_disable();
+    // Record the current counter value.
+    uint64_t start = hpet_get_counter();
 
-    volatile uint64_t *timer_config = _timer_config_reg(0);
-    *timer_config &= ~(1 << 2);      // Disable timer 0 interrupts.
+    // Calculate the number of ticks required for the delay.
+    uint64_t duration = (hpet_frequency / 1000) * ms;
 
-    *hpet_main_counter = 0;
-    uint64_t limit = (uint64_t)((hpet_frequency / 1000) * ms);
-
-    hpet_enable();
-    while (*hpet_main_counter < limit);
-    hpet_disable();
+    // Wait until the required number of ticks has elapsed.
+    while ((hpet_get_counter() - start) < duration);
 }
 
 /*
@@ -256,4 +350,21 @@ void hpet_sleep_counter(uint64_t ms)
 void hpet_isr()
 {
     _ticks++;
+}
+
+/*
+ * Returns the current HPET main counter value.
+ */
+uint64_t hpet_get_counter()
+{
+    return *hpet_main_counter;
+}
+
+/*
+ * Return the elapsed time in milliseconds since
+ * the HPET main counter was initialised.
+ */
+uint64_t hpet_get_uptime_ms(void)
+{
+    return hpet_get_counter() / (hpet_frequency / 1000);
 }

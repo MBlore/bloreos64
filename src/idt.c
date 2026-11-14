@@ -34,9 +34,6 @@
 struct idt_entry idt[256];
 struct idt_ptr idtp;
 
-// Incrementing timer in milliseconds since the kernel started.
-volatile uint64_t kernel_timer_secs;
-
 extern void ISR_Handler_PS2(void);
 extern void ISR_Handler_Faults(void);
 extern void *isr_thunks[];
@@ -123,7 +120,6 @@ void _handle_fault(
 void _handle_timer()
 {
     hpet_isr();
-    hpet_ack();
     lapic_eoi();
 }
 
@@ -132,7 +128,7 @@ void _handle_timer()
 */
 void _handle_lapic_timer()
 {
-    kernel_timer_secs++;
+    // Reserved for future scheduler features.
     lapic_eoi();
 }
 

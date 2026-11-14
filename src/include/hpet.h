@@ -26,5 +26,7 @@ void hpet_ack();
 void hpet_isr();
 void hpet_sleep(uint64_t ms);
 void hpet_sleep_counter(uint64_t ms);
+uint64_t hpet_get_counter();
+uint64_t hpet_get_uptime_ms();
 
 #endif

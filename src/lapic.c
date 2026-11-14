@@ -87,19 +87,35 @@ void lapic_time_stop()
 void lapic_timer_init()
 {    
     lapic_write(LAPIC_TMRDIV, 0);
+    kprintf("LAPIC divide register: %d\n", lapic_read(LAPIC_TMRDIV));
     lapic_time_stop();
 
     // Start the timer countdown.
     // Its important no log writes are done in this timing block as
     // that will invoke device writes/frame buffer writes and be slow.
     lapic_write(LAPIC_TMRINITCNT, 0xFFFFFFFF);  // Sets the count to -1.
+
+    uint64_t hpet_before = hpet_get_counter();
     hpet_sleep_counter(100);
+    uint64_t hpet_after = hpet_get_counter();
+
     uint32_t ticksin100ms = 0xFFFFFFFF - lapic_read(LAPIC_TMRCURRCNT);
     lapic_time_stop();
 
+    kprintf("HPET calibration ticks: %d\n", hpet_after - hpet_before);
+
+    kprintf("LAPIC ticks in 100ms: %d\n", ticksin100ms);
+    kprintf("LAPIC ticks per ms: %d\n", ticksin100ms / 100);
+
     // This unmasks and starts the timer in period mode.
-    lapic_write(LAPIC_TMRINITCNT, ticksin100ms * 10);
+    uint32_t ticks_per_ms = ticksin100ms / 100;
+    lapic_write(LAPIC_TMRINITCNT, ticks_per_ms * 10);
     lapic_write(LAPIC_LVT_TMR, LAPICTMR_VECTOR | TMR_PERIODC);
+
+    uint32_t timer_lvt = lapic_read(LAPIC_LVT_TMR);
+    kprintf("LAPIC timer LVT: 0x%X\n", timer_lvt);
+
+    kprintf("LAPIC initial count: %d\n", lapic_read(LAPIC_TMRINITCNT));
 }
 
 void lapic_init()

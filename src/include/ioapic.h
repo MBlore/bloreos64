@@ -29,7 +29,8 @@
 
 void ioapic_write(struct ioapic *pApic, const uint8_t offset, const uint32_t val);
 uint32_t ioapic_read(struct ioapic *pApic, const uint8_t offset);
-
-void ioapic_redirect_irq(uint32_t lapic_id, uint8_t vector, uint8_t irq, bool status);
+bool ioapic_redirect_irq(uint32_t lapic_id, uint8_t vector, uint8_t irq, bool status);
+bool ioapic_supports_gsi(uint32_t gsi);
+bool ioapic_redirect_gsi(uint32_t lapic_id, uint8_t vector, uint32_t gsi, uint16_t flags, bool status);
 
 #endif
