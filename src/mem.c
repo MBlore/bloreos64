@@ -182,18 +182,7 @@ void _get_free_pages()
         struct limine_memmap_entry *entry = memmap->entries[i];
 
         if (entry->type != LIMINE_MEMMAP_USABLE) {
-            kprintf(
-                "Memory Region Unusable: type %d, %d pages (%d mb)\n",
-                entry->type,
-                entry->length / PAGE_SIZE,
-                entry->length / 1024 / 1024);
-
             continue;
-        } else {
-            kprintf(
-                "Memory Region Usable: %d pages (%d mb)\n",
-                entry->length / PAGE_SIZE,
-                entry->length / 1024 / 1024);
         }
 
         // Find the page this entry refers to in our bitmap.

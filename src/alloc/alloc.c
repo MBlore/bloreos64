@@ -19,6 +19,7 @@
 #include <bump.h>
 #include <slob.h>
 #include <str.h>
+#include <mem.h>
 
 #ifdef ALLOC_USESLOB
 void *malloc(size_t size)
@@ -42,5 +43,20 @@ void free(void *ptr)
 {
     bump_free(ptr);
 }
+#endif
+
+#ifdef ALLOC_USEPMM
+
+// Temporarily use the PMM directly for heap allocations.
+void *malloc(size_t size)
+{
+    return kalloc(size);
+}
+
+void free(void *ptr)
+{
+    kfree(ptr);
+}
+
 #endif
 

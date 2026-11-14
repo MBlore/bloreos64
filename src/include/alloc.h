@@ -21,7 +21,8 @@
 #include <stddef.h>
 
 //#define ALLOC_USEBUMP
-#define ALLOC_USESLOB
+//#define ALLOC_USESLOB
+#define ALLOC_USEPMM
 
 void *malloc(size_t size);
 void free(void *ptr);

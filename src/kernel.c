@@ -77,7 +77,6 @@ void kernel_main(void)
     kprintf("GDT/IDT initialized.\n");
 
     kmem_init();
-    slob_init();
 
     kprintf("PMM Available Pages: %lu\n", num_pages_available);
 
