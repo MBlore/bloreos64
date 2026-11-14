@@ -341,12 +341,12 @@ void _init_stats()
     num_pages_in_map = map_size_bytes / PAGE_SIZE;
 }
 
-inline void* _get_addr_from_page(uint64_t page)
+static inline void* _get_addr_from_page(uint64_t page)
 {
     return (void*)(lowest_address + (page * PAGE_SIZE) + vmm_higher_half_offset);
 }
 
-inline uint64_t _get_page_from_addr(void* addr)
+static inline uint64_t _get_page_from_addr(void* addr)
 {
     return ((uint64_t)addr - lowest_address - vmm_higher_half_offset) / PAGE_SIZE;
 }

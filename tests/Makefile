@@ -15,6 +15,18 @@ all: $(TEST_BIN)
 		./$$test; \
 	done
 
+# Memory manager test dependencies.
+MEM_SRC := ../src/mem.c
+MEM_MOCKS := mocks/mock_str.c
+
+bin/test_mem: test_mem.c $(UNITY_SRC) $(MEM_SRC) $(MEM_MOCKS) mocks/kernel.h
+	mkdir -p bin
+	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
+		-Imocks \
+		-ffreestanding \
+		$(UNITY_SRC) $(MEM_SRC) $(MEM_MOCKS) $< \
+		-o $@
+		
 # Compile each test suite into a separate executable.
 bin/%: %.c $(UNITY_SRC)
 	mkdir -p bin
