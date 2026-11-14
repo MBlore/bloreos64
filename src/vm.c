@@ -59,11 +59,19 @@ uint64_t walk_page_table(uint64_t virt_addr)
 
     uint64_t cr3 = get_cr3();
 
-    // According to the Intel SDM, bits 12 to 12+(MAXPHYADDR-1), so bits 12 to 51 in QEmu that reports a 40 MAXPHYADDR.
-    // The Intel SDM says the address is page aligned (4096 bytes), which means that address of the table starts at bit 12 (max value of 12 bits is 4095 decimal).
-    // So we have to leave the table address starting at bit 12, up to bits 51, and zero out the lower 12 bits and the bits above 51,
-    // as these other bits just contains flags and reserved state.
-    uint64_t addrmask = (((uint64_t)1 << maxphyaddr) - 1) << 12;
+    // According to the Intel SDM, MAXPHYADDR specifies the number
+    // of physical address bits supported by the processor.
+    //
+    // For MAXPHYADDR = 40, physical addresses occupy bits 0-39.
+    //
+    // Page-table physical addresses are 4 KiB aligned, so their
+    // lowest 12 bits are zero.
+    //
+    // Therefore, the physical base address stored in a page-table
+    // entry occupies bits 12 through MAXPHYADDR-1 (bits 12-39).
+    //
+    // Mask out the lower 12 flag bits and all bits above MAXPHYADDR-1.
+    uint64_t addrmask = (((uint64_t)1 << maxphyaddr) - 1) & ~0xFFFULL;
     uint64_t pml4addr = cr3 & addrmask;
     uint64_t *pml4 = (uint64_t*)PHYS_TO_VIRT(pml4addr);
 

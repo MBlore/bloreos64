@@ -148,6 +148,13 @@ static inline uint64_t get_cr0()
     return val;
 }
 
+static inline uint64_t get_cr2()
+{
+    uint64_t val;
+    asm volatile ("movq %%cr2, %0" : "=r"(val) :: "memory");
+    return val;
+}
+
 static inline uint64_t get_cr3()
 {
     uint64_t val;
@@ -164,21 +171,28 @@ static inline uint64_t get_cr4()
 
 static inline void cpuid(int code, uint32_t *a, uint32_t *d)
 {
+    uint32_t eax, ebx, ecx, edx;
+
     asm volatile (
         "cpuid"
-        : "=a"(*a), "=d"(*d)
-        : "O"(code)
-        : "ebx", "ecx"
-        );
+        : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+        : "a"((uint32_t)code), "c"(0U)
+    );
+
+    *a = eax;
+    *d = edx;
 }
 
 static inline uint64_t cpu_get_address_widths()
 {
-    uint64_t eax = 0x80000008;
+    uint32_t eax = 0x80000008;
+    uint32_t ebx;
+    uint32_t ecx = 0;
+    uint32_t edx;
+
     asm volatile (
         "cpuid"
-        : "=a"(eax)
-        : "a" (eax)
+        : "+a"(eax), "=b"(ebx), "+c"(ecx), "=d"(edx)
     );
 
     return eax;

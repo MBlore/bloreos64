@@ -91,7 +91,7 @@ void kernel_main(void)
 
     pci_init();
     
-    nvme_init();
+    //nvme_init();
     
     q_keyboard = cqueue_create(200);
     ps2_init();
@@ -119,6 +119,10 @@ void kernel_main(void)
             disable_interrupts();
             uint32_t scanCode = cqueue_read(q_keyboard);
             enable_interrupts();
+
+            if (scanCode >= 256) {
+                continue;
+            }
 
             KeyEvent_t *pKE = scancode_map[scanCode];
             if (pKE != NULL) {

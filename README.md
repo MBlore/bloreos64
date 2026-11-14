@@ -15,6 +15,7 @@ xorriso
 gdisk
 qemu
 ovmf
+gdb
 
 # Setup
 

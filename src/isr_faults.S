@@ -4,11 +4,26 @@
 # in to the text section.
 .macro THUNK num
     interrupt_thunk_\num:
-        # Move the macro param number in to RDI (our fault vector number).
+        # Page faults push an error code onto the stack.
+        .if \num == 14
+            mov 0(%rsp), %rsi    # Error code
+            mov 8(%rsp), %rdx    # Saved RIP
+        .else
+            xor %rsi, %rsi
+            xor %rdx, %rdx
+        .endif
+
+        # First argument: exception vector
         mov $\num, %rdi
+
         cld
+        and $-16, %rsp
         call _handle_fault
+
+    1:
+        cli
         hlt
+        jmp 1b
 .endm
 
 # Macro for writing out the label address in the data section.

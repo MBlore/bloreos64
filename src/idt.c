@@ -62,7 +62,10 @@ void _idt_set_gate(int vector, void *handler, uint8_t flags)
     idt[vector].reserved = 0;
 }
 
-void _handle_fault(uint64_t vector)
+void _handle_fault(
+    uint64_t vector,
+    uint64_t error_code,
+    uint64_t rip)
 {
     const char *fault_names[32];
     fault_names[0] = "Divide Error Exception";
@@ -89,6 +92,21 @@ void _handle_fault(uint64_t vector)
     fault_names[21] = "Control Protection Exception";
     
     kprintf("**FAULT**: (%lu) %s\n", vector, fault_names[vector]);
+
+    // Page faults.
+    if (vector == 14)
+    {
+        uint64_t cr2;
+
+        __asm__ volatile (
+            "mov %%cr2, %0"
+            : "=r"(cr2)
+        );
+
+        kprintf("CR2:        0x%x\n", get_cr2);
+        kprintf("RIP:        0x%x\n", rip);
+        kprintf("Error Code: 0x%x\n", error_code);
+    }
 }
 
 /*
