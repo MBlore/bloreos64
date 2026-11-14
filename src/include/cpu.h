@@ -90,18 +90,6 @@ static inline uint32_t inl(uint16_t port)
     return ret;
 }
 
-static inline uint64_t get_rax()
-{
-    uint64_t val;
-    asm volatile ("movq %%rax, %0" : "=r"(val) :: "memory");
-    return val;
-}
-
-static inline void set_rax(uint64_t val)
-{
-    asm volatile ("movq %0, %%rax" :: "r"(val) : "memory");
-}
-
 static inline uint64_t read_msr(uint32_t msr_id)
 {
     uint32_t low, high;
@@ -222,12 +210,12 @@ static inline void lidt(void* idt_ptr)
 
 static inline void disable_interrupts()
 {
-    asm("cli");
+    asm volatile ("cli" ::: "memory");
 }
 
 static inline void enable_interrupts()
 {
-    asm("sti");
+    asm volatile ("sti" ::: "memory");
 }
 
 static inline bool interrupt_state()
