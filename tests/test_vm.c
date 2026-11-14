@@ -82,11 +82,8 @@ static void setup_5level_paging(void)
     // Simulate a CPU operating in five-level paging mode.
     mock_cr4 = CR4_PAE | CR4_LA57;
     mock_cr3 = TEST_PML5_PHYSICAL_ADDRESS;
-
-    mock_address_widths =
-        TEST_PHYSICAL_ADDRESS_WIDTH |
-        (TEST_LINEAR_ADDRESS_WIDTH_5LEVEL << 8);
-
+    mock_address_widths = TEST_PHYSICAL_ADDRESS_WIDTH |
+                          (TEST_LINEAR_ADDRESS_WIDTH_5LEVEL << 8);
     vm_init();
 }
 
@@ -100,18 +97,23 @@ static void link_4level_page_tables(void)
 
 static void link_5level_page_tables(void)
 {
-    // Connect the PML5 to the four-level paging hierarchy.
     pml5[0] = TEST_PML4_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-
     link_4level_page_tables();
 }
 
 static void assert_translation_failure(uint64_t virtual_address)
 {
     uint64_t result = UINT64_MAX;
-
     TEST_ASSERT_FALSE(vm_translate(virtual_address, &result));
     TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, result);
+}
+
+static void assert_translation(uint64_t virtual_address,
+                               uint64_t expected_physical_address)
+{
+    uint64_t result = UINT64_MAX;
+    TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
+    TEST_ASSERT_EQUAL_UINT64(expected_physical_address, result);
 }
 
 void test_vm_initialisation(void)
@@ -132,9 +134,7 @@ void test_vm_translate_unmapped_address(void)
     const uint64_t virtual_address = PAGE_SIZE;
 
     // No page table entries are present, so translation must fail.
-    uint64_t result = UINT64_MAX;
-    TEST_ASSERT_FALSE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, result);
+    assert_translation_failure(virtual_address);
 }
 
 void test_vm_translate_4kb_page(void)
@@ -144,16 +144,13 @@ void test_vm_translate_4kb_page(void)
     const uint64_t virtual_address = PAGE_SIZE;
     const uint64_t physical_address = 8 * PAGE_SIZE;
 
+    // Link the four levels of the paging hierarchy.
     link_4level_page_tables();
 
     // Map the virtual page to a physical page.
     pt[1] = physical_address | TEST_PAGE_PRESENT;
 
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address,
-        result);
+    assert_translation(virtual_address, physical_address);
 }
 
 void test_vm_translate_page_offset(void)
@@ -164,16 +161,13 @@ void test_vm_translate_page_offset(void)
     const uint64_t physical_address = 8 * PAGE_SIZE;
     const uint64_t offset = 0x234;
 
+    // Link the four levels of the paging hierarchy.
     link_4level_page_tables();
 
     pt[1] = physical_address | TEST_PAGE_PRESENT;
 
     // Translation must preserve the offset within the page.
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address + offset, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address + offset,
-        result);
+    assert_translation(virtual_address + offset, physical_address + offset);
 }
 
 void test_vm_translate_entry_flags(void)
@@ -195,11 +189,7 @@ void test_vm_translate_entry_flags(void)
     pt[1] = physical_address | flags;
 
     // Translation must exclude the permission flags.
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address,
-        result);
+    assert_translation(virtual_address, physical_address);
 }
 
 void test_vm_translate_nonzero_indexes(void)
@@ -215,11 +205,7 @@ void test_vm_translate_nonzero_indexes(void)
     pd[3] = TEST_PT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
     pt[4] = physical_address | TEST_PAGE_PRESENT;
 
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address,
-        result);
+    assert_translation(virtual_address, physical_address);
 }
 
 void test_vm_translate_higher_half_address(void)
@@ -235,11 +221,7 @@ void test_vm_translate_higher_half_address(void)
     pd[0] = TEST_PT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
     pt[1] = physical_address | TEST_PAGE_PRESENT;
 
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address,
-        result);
+    assert_translation(virtual_address, physical_address);
 }
 
 void test_vm_translate_missing_pdpt_entry(void)
@@ -254,9 +236,7 @@ void test_vm_translate_missing_pdpt_entry(void)
     // The PDPT entry remains empty.
 
     // Translation must stop at the missing entry.
-    uint64_t result = UINT64_MAX;
-    TEST_ASSERT_FALSE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, result);
+    assert_translation_failure(virtual_address);
 }
 
 void test_vm_translate_missing_pd_entry(void)
@@ -271,9 +251,7 @@ void test_vm_translate_missing_pd_entry(void)
 
     // The PD entry remains empty.
 
-    uint64_t result = UINT64_MAX;
-    TEST_ASSERT_FALSE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, result);
+    assert_translation_failure(virtual_address);
 }
 
 void test_vm_translate_missing_pt_entry(void)
@@ -282,13 +260,12 @@ void test_vm_translate_missing_pt_entry(void)
 
     const uint64_t virtual_address = PAGE_SIZE;
 
+    // Link all four levels of the paging hierarchy.
     link_4level_page_tables();
 
     // The final PT entry remains empty.
 
-    uint64_t result = UINT64_MAX;
-    TEST_ASSERT_FALSE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, result);
+    assert_translation_failure(virtual_address);
 }
 
 void test_vm_translate_2mb_page(void)
@@ -309,11 +286,7 @@ void test_vm_translate_2mb_page(void)
 
     const uint64_t offset = 0x1234;
 
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address + offset, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address + offset,
-        result);
+    assert_translation(virtual_address + offset, physical_address + offset);
 }
 
 void test_vm_translate_1gb_page(void)
@@ -332,11 +305,7 @@ void test_vm_translate_1gb_page(void)
               TEST_PAGE_PRESENT |
               TEST_PAGE_SIZE_FLAG;
 
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address + offset, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address + offset,
-        result);
+    assert_translation(virtual_address + offset, physical_address + offset);
 }
 
 void test_vm_translate_2mb_nonzero_base(void)
@@ -355,11 +324,7 @@ void test_vm_translate_2mb_nonzero_base(void)
             TEST_PAGE_PRESENT |
             TEST_PAGE_SIZE_FLAG;
 
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address + offset, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address + offset,
-        result);
+    assert_translation(virtual_address + offset, physical_address + offset);
 }
 
 void test_vm_translate_1gb_nonzero_base(void)
@@ -377,11 +342,7 @@ void test_vm_translate_1gb_nonzero_base(void)
               TEST_PAGE_PRESENT |
               TEST_PAGE_SIZE_FLAG;
 
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address + offset, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address + offset,
-        result);
+    assert_translation(virtual_address + offset, physical_address + offset);
 }
 
 void test_vm_translate_noncanonical_address(void)
@@ -398,9 +359,7 @@ void test_vm_translate_noncanonical_address(void)
     pt[1] = physical_address | TEST_PAGE_PRESENT;
 
     // A non-canonical virtual address must not be translated.
-    uint64_t result = UINT64_MAX;
-    TEST_ASSERT_FALSE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, result);
+    assert_translation_failure(virtual_address);
 }
 
 void test_vm_translate_noncanonical_lower_half(void)
@@ -415,19 +374,12 @@ void test_vm_translate_noncanonical_lower_half(void)
     pt[1] = physical_address | TEST_PAGE_PRESENT;
 
     // Reject incorrect sign extension of bit 47.
-    uint64_t result = UINT64_MAX;
-    TEST_ASSERT_FALSE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, result);
+    assert_translation_failure(virtual_address);
 }
 
 void test_vm_translate_5level_missing_pd_entry(void)
 {
-    mock_cr4 = CR4_PAE | CR4_LA57;
-    mock_cr3 = TEST_PML5_PHYSICAL_ADDRESS;
-    mock_address_widths = TEST_PHYSICAL_ADDRESS_WIDTH |
-                          (TEST_LINEAR_ADDRESS_WIDTH_5LEVEL << 8);
-
-    vm_init();
+    setup_5level_paging();
 
     const uint64_t virtual_address = PAGE_SIZE;
 
@@ -436,16 +388,13 @@ void test_vm_translate_5level_missing_pd_entry(void)
     pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
     pdpt[0] = TEST_PD_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
 
-    uint64_t result = UINT64_MAX;
-    TEST_ASSERT_FALSE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, result);
+    assert_translation_failure(virtual_address);
 }
 
 void test_vm_translate_5level_4kb_page(void)
 {
+    // Simulate active five-level paging.
     setup_5level_paging();
-
-    vm_init();
 
     const uint64_t virtual_address = PAGE_SIZE;
     const uint64_t physical_address = 8 * PAGE_SIZE;
@@ -454,11 +403,7 @@ void test_vm_translate_5level_4kb_page(void)
     link_5level_page_tables();
     pt[1] = physical_address | TEST_PAGE_PRESENT;
 
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address,
-        result);
+    assert_translation(virtual_address, physical_address);
 }
 
 void test_vm_translate_5level_extended_address(void)
@@ -470,16 +415,10 @@ void test_vm_translate_5level_extended_address(void)
 
     // Use a non-zero PML5 index.
     pml5[1] = TEST_PML4_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pdpt[0] = TEST_PD_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pd[0] = TEST_PT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
+    link_4level_page_tables();
     pt[1] = physical_address | TEST_PAGE_PRESENT;
 
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address,
-        result);
+    assert_translation(virtual_address, physical_address);
 }
 
 void test_vm_translate_5level_higher_half(void)
@@ -491,16 +430,10 @@ void test_vm_translate_5level_higher_half(void)
 
     // Map an address in the five-level higher half.
     pml5[256] = TEST_PML4_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pdpt[0] = TEST_PD_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pd[0] = TEST_PT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
+    link_4level_page_tables();
     pt[1] = physical_address | TEST_PAGE_PRESENT;
 
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address,
-        result);
+    assert_translation(virtual_address, physical_address);
 }
 
 void test_vm_translate_5level_noncanonical_address(void)
@@ -512,15 +445,11 @@ void test_vm_translate_5level_noncanonical_address(void)
 
     // Create a valid mapping in the higher half.
     pml5[256] = TEST_PML4_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pdpt[0] = TEST_PD_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pd[0] = TEST_PT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
+    link_4level_page_tables();
     pt[1] = physical_address | TEST_PAGE_PRESENT;
 
     // Reject an incorrectly sign-extended virtual address.
-    uint64_t result = UINT64_MAX;
-    TEST_ASSERT_FALSE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, result);
+    assert_translation_failure(virtual_address);
 }
 
 void test_vm_translate_missing_pml5_entry(void)
@@ -531,9 +460,7 @@ void test_vm_translate_missing_pml5_entry(void)
 
     // Leave the PML5 entry empty.
     // The walker must terminate at this level.
-    uint64_t result = UINT64_MAX;
-    TEST_ASSERT_FALSE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, result);
+    assert_translation_failure(virtual_address);
 }
 
 void test_vm_translate_5level_2mb_page(void)
@@ -553,11 +480,7 @@ void test_vm_translate_5level_2mb_page(void)
             TEST_PAGE_PRESENT |
             TEST_PAGE_SIZE_FLAG;
 
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address + offset, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address + offset,
-        result);
+    assert_translation(virtual_address + offset, physical_address + offset);
 }
 
 void test_vm_translate_5level_1gb_page(void)
@@ -576,11 +499,7 @@ void test_vm_translate_5level_1gb_page(void)
               TEST_PAGE_PRESENT |
               TEST_PAGE_SIZE_FLAG;
 
-    uint64_t result = 0;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address + offset, &result));
-    TEST_ASSERT_EQUAL_UINT64(
-        physical_address + offset,
-        result);
+    assert_translation(virtual_address + offset, physical_address + offset);
 }
 
 void test_vm_translate_physical_address_zero(void)
@@ -595,10 +514,7 @@ void test_vm_translate_physical_address_zero(void)
     // Physical address zero is a valid mapping.
     pt[1] = physical_address | TEST_PAGE_PRESENT;
 
-    uint64_t result = UINT64_MAX;
-
-    TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(physical_address, result);
+    assert_translation(virtual_address, physical_address);
 }
 
 void test_vm_translate_null_output(void)
@@ -631,11 +547,8 @@ void test_vm_translate_2mb_pat_flag(void)
             TEST_PAGE_SIZE_FLAG |
             TEST_LARGE_PAGE_PAT;
 
-    uint64_t result = UINT64_MAX;
-
     // The PAT flag must not affect the physical address.
-    TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(physical_address, result);
+    assert_translation(virtual_address, physical_address);
 }
 
 void test_vm_translate_1gb_pat_flag(void)
@@ -653,11 +566,8 @@ void test_vm_translate_1gb_pat_flag(void)
               TEST_PAGE_SIZE_FLAG |
               TEST_LARGE_PAGE_PAT;
 
-    uint64_t result = UINT64_MAX;
-
     // The PAT flag must not affect the physical address.
-    TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(physical_address, result);
+    assert_translation(virtual_address, physical_address);
 }
 
 int main(void)
@@ -688,6 +598,7 @@ int main(void)
     RUN_TEST(test_vm_translate_missing_pml5_entry);
     RUN_TEST(test_vm_translate_5level_2mb_page);
     RUN_TEST(test_vm_translate_5level_1gb_page);
+
     RUN_TEST(test_vm_translate_physical_address_zero);
     RUN_TEST(test_vm_translate_null_output);
     RUN_TEST(test_vm_translate_2mb_pat_flag);
