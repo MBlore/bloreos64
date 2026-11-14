@@ -41,6 +41,9 @@ extern void ISR_Handler_PS2(void);
 extern void ISR_Handler_Faults(void);
 extern void *isr_thunks[];
 
+extern void ISR_Handler_HPET(void);
+extern void ISR_Handler_LAPIC_Timer(void);
+
 void _idt_load()
 {
     idtp.limit = sizeof(idt) - 1;
@@ -67,7 +70,7 @@ void _handle_fault(
     uint64_t error_code,
     uint64_t rip)
 {
-    const char *fault_names[32];
+    const char *fault_names[32] = {0};
     fault_names[0] = "Divide Error Exception";
     fault_names[1] = "Debug Exception";
     fault_names[2] = "NMI Interrupt";
@@ -90,8 +93,13 @@ void _handle_fault(
     fault_names[19] = "SIMD Floating-Point Exception";
     fault_names[20] = "Virtualization Exception";
     fault_names[21] = "Control Protection Exception";
+
+    const char *name =
+        vector < 32 && fault_names[vector]
+            ? fault_names[vector]
+            : "Unknown Exception";
     
-    kprintf("**FAULT**: (%lu) %s\n", vector, fault_names[vector]);
+    kprintf("**FAULT**: (%lu) %s\n", vector, name);
 
     // Page faults.
     if (vector == 14)
@@ -103,7 +111,7 @@ void _handle_fault(
             : "=r"(cr2)
         );
 
-        kprintf("CR2:        0x%x\n", get_cr2);
+        kprintf("CR2:        0x%x\n", get_cr2());
         kprintf("RIP:        0x%x\n", rip);
         kprintf("Error Code: 0x%x\n", error_code);
     }
@@ -114,11 +122,9 @@ void _handle_fault(
 */
 void _handle_timer()
 {
-    isr_save();
     hpet_isr();
     hpet_ack();
     lapic_eoi();
-    isr_restore();
 }
 
 /*
@@ -126,10 +132,8 @@ void _handle_timer()
 */
 void _handle_lapic_timer()
 {
-    isr_save();
     kernel_timer_secs++;
     lapic_eoi();
-    isr_restore();
 }
 
 /*
@@ -153,9 +157,9 @@ void idt_init()
     }
 
     // Device gates.
-    _idt_set_gate(TIMER_VECTOR, _handle_timer, PRIVELEGE_RING0);
+    _idt_set_gate(TIMER_VECTOR, ISR_Handler_HPET, PRIVELEGE_RING0);
     _idt_set_gate(KEYBOARD_VECTOR, ISR_Handler_PS2, PRIVELEGE_RING0);
-    _idt_set_gate(LAPICTMR_VECTOR, _handle_lapic_timer, PRIVELEGE_RING0);
+    _idt_set_gate(LAPICTMR_VECTOR, ISR_Handler_LAPIC_Timer, PRIVELEGE_RING0);
 
     _idt_load();
     kprintf("Loading IDT at: 0x%X\n", &idtp);

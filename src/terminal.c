@@ -362,9 +362,9 @@ void _handle_cmd()
     } else if (strcmp(input_str, "cls") == 0) {
         term_clear();
     } else if (strcmp(input_str, "time") == 0) {
-        tprintf("Kerner Time: %lums\n", kernel_timer_secs);
+        tprintf("Kernel Time: %lus\n", kernel_timer_secs);
     } else if (strcmp(input_str, "stime") == 0) {
-        tprintf("Kerner Time: %lus\n", kernel_timer_secs / 1000);
+        tprintf("Kernel Time: %lumins\n", kernel_timer_secs / 60);
     } else {
         tprintf("Unknown command.\n");
     }
