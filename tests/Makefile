@@ -1,17 +1,25 @@
 HOST_CC := gcc
-TEST_BINARY := bin/unit_tests
+HOST_CFLAGS := -Wall -Wextra -std=gnu11
 
 UNITY_SRC := unity/src/unity.c
-TEST_SRC := test_hello.c
+INCLUDES := -Iunity/src -I../src/include
 
+# Automatically discover all unit test suites.
+TEST_SRC := $(wildcard test_*.c)
+TEST_BIN := $(patsubst %.c,bin/%,$(TEST_SRC))
+
+# Build and execute all unit test suites.
 .PHONY: all
-all:
+all: $(TEST_BIN)
+	@set -e; for test in $(TEST_BIN); do \
+		./$$test; \
+	done
+
+# Compile each test suite into a separate executable.
+bin/%: %.c $(UNITY_SRC)
 	mkdir -p bin
-	$(HOST_CC) -Wall -Wextra -std=gnu11 \
-		-Iunity/src \
-		$(UNITY_SRC) $(TEST_SRC) \
-		-o $(TEST_BINARY)
-	./$(TEST_BINARY)
+	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
+		$(UNITY_SRC) $< -o $@
 
 .PHONY: clean
 clean:
