@@ -31,10 +31,28 @@ extern uint64_t max_pages_available;
 extern uint64_t num_pages_available;
 extern uint64_t vmm_higher_half_offset;
 
-void kmem_init();
+// Initialise the physical memory manager using the bootloader's
+// memory map. Must only be called once during kernel startup.
+void kmem_init(void);
+
+// Reserve zero-initialised physical memory during early boot.
+// Memory is rounded up to a page boundary and cannot be freed.
+// Halts the kernel on failure.
+// Must not be called after PMM initialisation.
 void* memmap_alloc(size_t length);
+
+// Allocate contiguous physical memory, rounded up to a page
+// boundary. Returns a higher-half virtual address or NULL on
+// failure. Allocated memory is not guaranteed to be zeroed.
 void* kalloc(size_t numBytes);
+
+// Allocate a specified number of contiguous physical pages.
+// Returns a higher-half virtual address or NULL on failure.
 void* kpalloc(size_t numPages);
+
+// Release an allocation previously made by kalloc or kpalloc.
+// Must receive the original allocation address.
+// NULL and unrecognised allocation addresses are ignored.
 void kfree(void *ptr);
 
 void memdumps(void *location, uint64_t len_bytes);

@@ -774,6 +774,127 @@ void test_pmm_free_interior_page(void)
     );
 }
 
+void test_pmm_zero_base_address(void)
+{
+    const size_t metadata_pages = 2;
+    const size_t first_region_pages = 8;
+
+    usable_region.base = 0;
+    usable_region.length = first_region_pages * PAGE_SIZE;
+
+    struct limine_memmap_entry second_region = {
+        .base = first_region_pages * PAGE_SIZE,
+        .length = (TEST_PAGE_COUNT - first_region_pages) * PAGE_SIZE,
+        .type = LIMINE_MEMMAP_USABLE
+    };
+
+    struct limine_memmap_entry *entries[] = {
+        &usable_region,
+        &second_region
+    };
+
+    memory_map.entries = entries;
+    memory_map.entry_count = sizeof(entries) / sizeof(entries[0]);
+
+    // Adjust the simulated HHDM for a physical base of zero.
+    hhdm_response.offset = (uintptr_t)physical_memory;
+
+    kmem_init();
+
+    TEST_ASSERT_EQUAL_UINT64(
+        TEST_PAGE_COUNT - metadata_pages,
+        num_pages_available
+    );
+
+    void *ptr = kalloc(PAGE_SIZE);
+
+    TEST_ASSERT_EQUAL_PTR(
+        physical_memory + metadata_pages * PAGE_SIZE,
+        ptr
+    );
+}
+
+void test_pmm_no_usable_memory(void)
+{
+    // Simulate a memory map containing only reserved memory.
+    usable_region.type = LIMINE_MEMMAP_RESERVED;
+
+    mock_hcf_expected = 1;
+
+    if (setjmp(mock_hcf_context) == 0) {
+        kmem_init();
+
+        TEST_FAIL_MESSAGE("Expected kernel halt");
+    }
+
+    mock_hcf_expected = 0;
+
+    // No physical pages should be available for allocation.
+    TEST_ASSERT_EQUAL_UINT64(0, max_pages_available);
+    TEST_ASSERT_EQUAL_UINT64(0, num_pages_available);
+    TEST_ASSERT_EQUAL_UINT64(0, total_memory_bytes);
+}
+
+void test_memmap_alloc_overflow(void)
+{
+    mock_hcf_expected = 1;
+
+    if (setjmp(mock_hcf_context) == 0) {
+        // A request that cannot be safely rounded up must halt.
+        memmap_alloc(SIZE_MAX);
+
+        TEST_FAIL_MESSAGE("Expected kernel halt");
+    }
+
+    mock_hcf_expected = 0;
+
+    // The failed allocation must leave the memory map unchanged.
+    TEST_ASSERT_EQUAL_UINT64(
+        TEST_PHYSICAL_BASE,
+        usable_region.base
+    );
+
+    TEST_ASSERT_EQUAL_UINT64(
+        TEST_MEMORY_SIZE,
+        usable_region.length
+    );
+
+    TEST_ASSERT_EQUAL_UINT64(
+        TEST_PAGE_COUNT,
+        max_pages_available
+    );
+}
+
+void test_memmap_alloc_zero_bytes(void)
+{
+    mock_hcf_expected = 1;
+
+    if (setjmp(mock_hcf_context) == 0) {
+        // Zero-byte boot allocations must be rejected.
+        memmap_alloc(0);
+
+        TEST_FAIL_MESSAGE("Expected kernel halt");
+    }
+
+    mock_hcf_expected = 0;
+
+    // The memory map must remain unchanged.
+    TEST_ASSERT_EQUAL_UINT64(
+        TEST_PHYSICAL_BASE,
+        usable_region.base
+    );
+
+    TEST_ASSERT_EQUAL_UINT64(
+        TEST_MEMORY_SIZE,
+        usable_region.length
+    );
+
+    TEST_ASSERT_EQUAL_UINT64(
+        TEST_PAGE_COUNT,
+        max_pages_available
+    );
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -806,6 +927,10 @@ int main(void)
     RUN_TEST(test_pmm_free_out_of_bounds);
     RUN_TEST(test_pmm_double_free);
     RUN_TEST(test_pmm_free_interior_page);
+    RUN_TEST(test_pmm_zero_base_address);
+    RUN_TEST(test_pmm_no_usable_memory);
+    RUN_TEST(test_memmap_alloc_overflow);
+    RUN_TEST(test_memmap_alloc_zero_bytes);
 
     return UNITY_END();
 }

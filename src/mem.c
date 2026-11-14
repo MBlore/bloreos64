@@ -214,6 +214,20 @@ void _get_free_pages()
 */
 void* memmap_alloc(size_t length)
 {
+    // Reject zero-byte boot allocation requests.
+    if (length == 0) {
+        kprintf("Boot allocator: Zero-byte allocation requested.\n");
+        hcf();
+        return NULL;
+    }
+
+    // Ensure rounding up to a page boundary cannot overflow.
+    if (length > SIZE_MAX - (PAGE_SIZE - 1)) {
+        kprintf("Boot allocator: Allocation size overflow.\n");
+        hcf();
+        return NULL;
+    }
+
     uint64_t size = ALIGN_UP(length, PAGE_SIZE);
 
     for (size_t i = 0; i < memmap->entry_count; i++) {
@@ -267,8 +281,11 @@ void _init_stats()
     max_pages_available = 0;
     num_pages_available = 0;
     highest_address = 0;
-    lowest_address = 0;
     allocation_cursor = 0;
+
+    // Start at the highest representable address so that
+    // physical address zero can be recognised as valid.
+    lowest_address = UINT64_MAX;
 
     memmap = memmap_request.response;
     hhdm = hhdm_request.response;
@@ -287,12 +304,15 @@ void _init_stats()
 
             highest_address = MAX(highest_address, entry->base + entry->length);
 
-            if (lowest_address == 0) {
-                lowest_address = entry->base;
-            } else {
-                lowest_address = MIN(lowest_address, entry->base);
-            }
+            lowest_address = MIN(lowest_address, entry->base);
         }
+    }
+
+    // The PMM cannot initialise without usable physical memory.
+    if (max_pages_available == 0) {
+        kprintf("PMM: No usable physical memory.\n");
+        hcf();
+        return;
     }
 
     uint64_t map_size_bytes = highest_address - lowest_address;
@@ -342,6 +362,12 @@ void* kalloc(size_t numBytes)
         pages_to_alloc++;
     }
 
+    // Reject allocations that exceed the entry map's storage capacity.
+    if (pages_to_alloc > UINT32_MAX) {
+        spinlock_unlock(&lock);
+        return NULL;
+    }
+
     // Reject requests that exceed the available physical memory.
     if (pages_to_alloc > num_pages_available) {
         spinlock_unlock(&lock);
@@ -351,28 +377,19 @@ void* kalloc(size_t numBytes)
     uint64_t start_alloc_page = 0;
     uint64_t allocated_pages = 0;
     bool looped = false;
-    bool allocating = false;
-    bool page_state = false;
 
     // Try and allocate pages starting from the cursor.
     while(true) {
-        page_state = bitmap_test(page_bitmap, allocation_cursor);
-
-        if (!allocating) {
-            if (!page_state) {
-                // Found a memory slot, lets start trying to allocate from here.
-                start_alloc_page = allocation_cursor;
-                allocating = true;
-                allocated_pages = 1;
-            }
+        if (bitmap_test(page_bitmap, allocation_cursor)) {
+            // An occupied page breaks the contiguous free region.
+            allocated_pages = 0;
         } else {
-            if (page_state) {
-                // This page is taken, back to seeking.
-                allocating = false;
-            } else {
-                // Free page.
-                allocated_pages++;
+            // Record the starting page of a new contiguous region.
+            if (allocated_pages == 0) {
+                start_alloc_page = allocation_cursor;
             }
+
+            allocated_pages++;
         }
 
         if (allocated_pages == pages_to_alloc) {
@@ -409,7 +426,9 @@ void* kalloc(size_t numBytes)
             // Start looking from the start and back to seeking
             // as we break the contiguous allocation.
             looped = true;
-            allocating = false;
+
+            // Contiguous allocations cannot wrap around the bitmap.
+            allocated_pages = 0;
         }
     }
 
