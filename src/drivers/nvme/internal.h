@@ -124,6 +124,21 @@
 #define NVME_IDENTIFY_LBADS_OFFSET 2
 #define NVME_IDENTIFY_LBADS_MIN    9
 
+#define NVME_ADMIN_SET_FEATURES 0x09
+
+#define NVME_IO_QUEUE_PAIR_COUNT 1
+#define NVME_IO_QUEUE_ENTRIES 64
+#define NVME_IO_QUEUE_ID      1
+
+#define NVME_ADMIN_CREATE_IO_CQ 0x05
+
+// Create I/O queue command fields.
+#define NVME_QUEUE_SIZE_SHIFT 16
+#define NVME_QUEUE_PHYS_CONTIGUOUS (1U << 0)
+
+#define NVME_ADMIN_CREATE_IO_SQ 0x01
+#define NVME_QUEUE_CQID_SHIFT   16
+
 // Represents a single 64-byte NVMe submission queue entry.
 typedef struct
 {
@@ -195,6 +210,17 @@ typedef struct
 #define NVME_ADMIN_QUEUE_ENTRIES 64
 #define NVME_ADMIN_QUEUE_ID 0
 
+// Represents an identified NVMe storage namespace.
+typedef struct
+{
+    uint32_t id;
+    uint32_t block_size;
+    uint64_t block_count;
+    uint64_t capacity_bytes;
+
+    bool valid;
+} nvme_namespace_t;
+
 // Represents an NVMe controller and its runtime state.
 typedef struct
 {
@@ -205,6 +231,8 @@ typedef struct
     uint32_t doorbell_stride;
 
     nvme_queue_t admin_queue;
+    nvme_queue_t io_queue;
+    nvme_namespace_t namespace;
 } nvme_controller_t;
 
 struct pci_device;
@@ -237,5 +265,8 @@ bool nvme_identify_controller(nvme_controller_t *ctrl);
 bool nvme_identify_active_namespaces(nvme_controller_t *ctrl);
 bool nvme_identify_namespace(nvme_controller_t *ctrl,
                              uint32_t namespace_id);
+bool nvme_set_number_of_queues(nvme_controller_t *ctrl);
+bool nvme_create_io_completion_queue(nvme_controller_t *ctrl);
+bool nvme_create_io_submission_queue(nvme_controller_t *ctrl);
 
 #endif

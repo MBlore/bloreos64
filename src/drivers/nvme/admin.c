@@ -213,6 +213,7 @@ bool nvme_identify_namespace(nvme_controller_t *ctrl,
                              uint32_t namespace_id)
 {
     dma_buffer_t buffer = {0};
+    ctrl->namespace.valid = false;
 
     if (ctrl->admin_queue.failed) {
         return false;
@@ -297,9 +298,130 @@ bool nvme_identify_namespace(nvme_controller_t *ctrl,
         const uint64_t size_bytes = size * block_size;
 
         kprintf("NVME: Disk size: %lu bytes\n", size_bytes);
+
+        // Persist the namespace geometry for future I/O operations.
+        ctrl->namespace.id = namespace_id;
+        ctrl->namespace.block_size = block_size;
+        ctrl->namespace.block_count = size;
+        ctrl->namespace.capacity_bytes = size_bytes;
+        ctrl->namespace.valid = true;
     }
 
     dma_free(&buffer);
 
     return success;
+}
+
+// Negotiate the number of I/O queues with the controller.
+bool nvme_set_number_of_queues(nvme_controller_t *ctrl)
+{
+    nvme_command_t command = {0};
+    nvme_completion_t completion = {0};
+
+    const uint32_t requested =
+        NVME_IO_QUEUE_PAIR_COUNT - 1;
+
+    command.opcode = NVME_ADMIN_SET_FEATURES;
+    command.cdw10 = NVME_FEATURE_NUM_QUEUES;
+
+    // Both requested queue counts are zero-based.
+    command.cdw11 =
+        (requested << NVME_FEATURE_NCQ_SHIFT) |
+        requested;
+
+    if (!nvme_execute_command(ctrl,
+                              &ctrl->admin_queue,
+                              &command,
+                              &completion)) {
+        return false;
+    }
+
+    // Decode the queue counts allocated by the controller.
+    const uint32_t submission_queues =
+        (completion.result & NVME_FEATURE_NSQ_MASK) + 1;
+
+    const uint32_t completion_queues =
+        (completion.result >> NVME_FEATURE_NCQ_SHIFT) + 1;
+
+    if (submission_queues < NVME_IO_QUEUE_PAIR_COUNT ||
+        completion_queues < NVME_IO_QUEUE_PAIR_COUNT) {
+        kprintf("NVME: Insufficient I/O queues.\n");
+        return false;
+    }
+
+    kprintf("NVME: Allocated I/O submission queues: %d\n",
+        (int)submission_queues);
+
+    kprintf("NVME: Allocated I/O completion queues: %d\n",
+        (int)completion_queues);
+
+    return true;
+}
+
+// Register an I/O completion queue with the controller.
+bool nvme_create_io_completion_queue(nvme_controller_t *ctrl)
+{
+    nvme_command_t command = {0};
+    nvme_completion_t completion = {0};
+
+    nvme_queue_t *queue = &ctrl->io_queue;
+
+    const uint32_t queue_size = queue->entry_count - 1;
+
+    command.opcode = NVME_ADMIN_CREATE_IO_CQ;
+    command.prp1 = queue->completion.phys_addr;
+
+    // Encode the queue size and identifier.
+    command.cdw10 =
+        (queue_size << NVME_QUEUE_SIZE_SHIFT) |
+        queue->queue_id;
+
+    // Use physically contiguous memory without interrupts.
+    command.cdw11 = NVME_QUEUE_PHYS_CONTIGUOUS;
+
+    if (!nvme_execute_command(ctrl,
+                              &ctrl->admin_queue,
+                              &command,
+                              &completion)) {
+        return false;
+    }
+
+    kprintf("NVME: I/O completion queue created.\n");
+
+    return true;
+}
+
+// Register an I/O submission queue with the controller.
+bool nvme_create_io_submission_queue(nvme_controller_t *ctrl)
+{
+    nvme_command_t command = {0};
+    nvme_completion_t completion = {0};
+
+    nvme_queue_t *queue = &ctrl->io_queue;
+
+    const uint32_t queue_size = queue->entry_count - 1;
+
+    command.opcode = NVME_ADMIN_CREATE_IO_SQ;
+    command.prp1 = queue->submission.phys_addr;
+
+    // Encode the queue size and identifier.
+    command.cdw10 =
+        (queue_size << NVME_QUEUE_SIZE_SHIFT) |
+        queue->queue_id;
+
+    // Associate the submission queue with its completion queue.
+    command.cdw11 =
+        ((uint32_t)queue->queue_id << NVME_QUEUE_CQID_SHIFT) |
+        NVME_QUEUE_PHYS_CONTIGUOUS;
+
+    if (!nvme_execute_command(ctrl,
+                              &ctrl->admin_queue,
+                              &command,
+                              &completion)) {
+        return false;
+    }
+
+    kprintf("NVME: I/O submission queue created.\n");
+
+    return true;
 }

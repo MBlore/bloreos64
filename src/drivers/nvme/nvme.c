@@ -111,4 +111,42 @@ void nvme_init()
     if (!nvme_identify_namespace(&controller, 1)) {
         return;
     }
+
+    // Negotiate the required number of I/O queues.
+    if (!nvme_set_number_of_queues(&controller)) {
+        return;
+    }
+
+    // Validate the required I/O queue capacity.
+    if (controller.max_queue_entries < NVME_IO_QUEUE_ENTRIES) {
+        kprintf("NVME: Insufficient I/O queue capacity.\n");
+        return;
+    }
+
+    // Allocate the I/O submission and completion queues.
+    if (!nvme_allocate_queue(&controller.io_queue,
+                            NVME_IO_QUEUE_ID,
+                            NVME_IO_QUEUE_ENTRIES)) {
+        return;
+    }
+
+    kprintf("NVME: I/O queues allocated.\n");
+
+    kprintf("NVME: I/O SQ physical address: 0x%x\n",
+        controller.io_queue.submission.phys_addr);
+
+    kprintf("NVME: I/O CQ physical address: 0x%x\n",
+        controller.io_queue.completion.phys_addr);
+
+    // Register the I/O completion queue.
+    if (!nvme_create_io_completion_queue(&controller)) {
+        return;
+    }
+
+    // Register the I/O submission queue.
+    if (!nvme_create_io_submission_queue(&controller)) {
+        return;
+    }
+
+    kprintf("NVME: I/O queues ready.\n");
 }
