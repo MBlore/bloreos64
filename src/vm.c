@@ -187,6 +187,82 @@ bool vm_translate(uint64_t virt_addr, uint64_t *phys_addr)
     return true;
 }
 
+bool vm_map_page(uint64_t virt_addr,
+                 uint64_t phys_addr,
+                 uint64_t flags)
+{
+    // Both addresses must be aligned to a 4 KiB page boundary.
+    const uint64_t alignment_mask = PAGE_SIZE - 1;
+
+    if (virt_addr & alignment_mask) {
+        return false;
+    }
+
+    if (phys_addr & alignment_mask) {
+        return false;
+    }
+
+    // Reject non-canonical virtual addresses.
+    if (!is_canonical_address(virt_addr)) {
+        return false;
+    }
+
+    // Reject physical addresses exceeding the CPU's address width.
+    const uint64_t physical_address_mask =
+        (1ULL << maxphyaddr) - 1;
+
+    if (phys_addr & ~physical_address_mask) {
+        return false;
+    }
+
+    // Five-level mapping is not yet supported.
+    if (get_cr4() & CR4_LA57) {
+        return false;
+    }
+
+    // Extract physical addresses from page table entries.
+    const uint64_t addrmask =
+        physical_address_mask & ~alignment_mask;
+
+    // Locate the PML4 using CR3.
+    uint64_t *pml4 = PHYS_TO_VIRT(get_cr3() & addrmask);
+    uint64_t pml4e = pml4[PML4_INDEX(virt_addr)];
+
+    if (!(pml4e & PAGE_PRESENT)) {
+        return false;
+    }
+
+    // Locate the Page Directory Pointer Table.
+    uint64_t *pdpt = PHYS_TO_VIRT(pml4e & addrmask);
+    uint64_t pdpte = pdpt[PDPT_INDEX(virt_addr)];
+
+    if (!(pdpte & PAGE_PRESENT) || (pdpte & PAGE_PS)) {
+        return false;
+    }
+
+    // Locate the Page Directory.
+    uint64_t *pd = PHYS_TO_VIRT(pdpte & addrmask);
+    uint64_t pde = pd[PD_INDEX(virt_addr)];
+
+    if (!(pde & PAGE_PRESENT) || (pde & PAGE_PS)) {
+        return false;
+    }
+
+    // Locate the final Page Table entry.
+    uint64_t *pt = PHYS_TO_VIRT(pde & addrmask);
+    uint64_t *pte = &pt[PT_INDEX(virt_addr)];
+
+    // Never overwrite an existing mapping.
+    if (*pte & PAGE_PRESENT) {
+        return false;
+    }
+
+    // Create the mapping.
+    *pte = phys_addr | flags | PAGE_PRESENT;
+
+    return true;
+}
+
 void vm_init()
 {
     kprintf("Initializing virtual memory...\n");

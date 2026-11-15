@@ -32,7 +32,7 @@ VM_SRC := ../src/vm.c
 VM_MOCKS := mocks/mock_str.c
 VM_HELPERS := vm_test_helpers.c
 
-bin/test_vm_translate: test_vm_translate.c $(UNITY_SRC) $(VM_SRC) $(VM_MOCKS) $(VM_HELPERS) vm_test_helpers.h mocks/cpu.h
+bin/test_vm_translate bin/test_vm_map: bin/%: %.c $(UNITY_SRC) $(VM_SRC) $(VM_MOCKS) $(VM_HELPERS) vm_test_helpers.h mocks/cpu.h
 	mkdir -p bin
 	$(HOST_CC) $(HOST_CFLAGS) -Imocks $(INCLUDES) \
 		-ffreestanding \

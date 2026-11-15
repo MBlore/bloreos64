@@ -27,4 +27,11 @@ void vm_init();
 // Returns false on failure, leaving phys_addr unchanged.
 bool vm_translate(uint64_t virt_addr, uint64_t *phys_addr);
 
+// Map a virtual page to a physical page using the specified flags.
+// Both addresses must be 4 KiB aligned.
+// Returns false on failure or if a mapping already exists.
+bool vm_map_page(uint64_t virt_addr,
+                 uint64_t phys_addr,
+                 uint64_t flags);
+
 #endif
