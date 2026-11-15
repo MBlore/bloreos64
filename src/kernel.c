@@ -97,16 +97,87 @@ void kernel_main(void)
 
     vm_init();
 
-    /*
-    for (int i = 0; i < 20; i++) {
-        void *pData = malloc(10000);
-        kprintf("pData: 0x%X\n", pData);
-        free(pData);
+    // Temporary VMM hardware test.
+    const uint64_t test_virtual_address = 0xFFFFC00000000000ULL;
+    uint64_t test_physical_address;
+
+    if (vm_translate(test_virtual_address, &test_physical_address)) {
+        kprintf("VMM TEST: Virtual address already mapped.\n");
+    } else {
+        kprintf("VMM TEST: Virtual address available.\n");
     }
 
-    void *pData = malloc(10009);
-    kprintf("pData: 0x%X\n", pData);
-    */
+    // Allocate a physical page for the VMM hardware test.
+    volatile uint64_t *test_page = kpalloc(1);
+
+    if (test_page == NULL) {
+        kprintf("VMM TEST: Physical allocation failed.\n");
+        hcf();
+    }
+
+    // Write a known value into the allocated physical page.
+    const uint64_t test_value = 0x123456789ABCDEF0ULL;
+    *test_page = test_value;
+
+    kprintf("VMM TEST: Physical page allocated.\n");
+
+    if (*test_page == test_value) {
+        kprintf("VMM TEST: Original value verified.\n");
+    } else {
+        kprintf("VMM TEST: Original value verification failed.\n");
+        hcf();
+    }
+
+    // Obtain the physical address of the allocated page.
+    const uint64_t test_page_phys =
+        (uint64_t)test_page - vmm_higher_half_offset;
+
+    // Request a writable mapping.
+    const uint64_t test_mapping_flags = 1ULL << 1;
+
+    // Map the physical page to our new virtual address.
+    if (!vm_map_page(test_virtual_address,
+                    test_page_phys,
+                    test_mapping_flags)) {
+        kprintf("VMM TEST: Mapping failed.\n");
+        hcf();
+    }
+
+    kprintf("VMM TEST: Mapping created successfully.\n");
+
+    // Verify the newly created mapping.
+    if (vm_translate(test_virtual_address, &test_physical_address) &&
+        test_physical_address == test_page_phys) {
+        kprintf("VMM TEST: Translation verified.\n");
+    } else {
+        kprintf("VMM TEST: Translation failed.\n");
+        hcf();
+    }
+
+    // Access the physical page through our new virtual mapping.
+    volatile uint64_t *test_mapped_page =
+        (volatile uint64_t *)test_virtual_address;
+
+    // Verify that both virtual addresses reference the same data.
+    if (*test_mapped_page == test_value) {
+        kprintf("VMM TEST: Virtual memory read successful.\n");
+    } else {
+        kprintf("VMM TEST: Virtual memory read failed.\n");
+        hcf();
+    }
+
+    // Write a different value through our new virtual mapping.
+    const uint64_t test_new_value = 0xFEDCBA9876543210ULL;
+
+    *test_mapped_page = test_new_value;
+
+    // Verify the change through the original HHDM mapping.
+    if (*test_page == test_new_value) {
+        kprintf("VMM TEST: Virtual memory write successful.\n");
+    } else {
+        kprintf("VMM TEST: Virtual memory write failed.\n");
+        hcf();
+    }
    
     // Process pending events or idle until an interrupt occurs.
     while(1) {
