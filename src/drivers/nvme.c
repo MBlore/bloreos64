@@ -21,64 +21,84 @@
 #include <nvme.h>
 #include <str.h>
 #include <kernel.h>
+#include <vm.h>
+#include <mem.h>
+
+#define NVME_PCI_CLASS     0x01
+#define NVME_PCI_SUBCLASS  0x08
+#define NVME_PCI_PROG_IF   0x02
+
+#define PCI_BAR_IO_SPACE        (1U << 0)
+#define PCI_BAR_TYPE_MASK       (3U << 1)
+#define PCI_BAR_TYPE_64BIT      (2U << 1)
+#define PCI_BAR_ADDRESS_MASK    0xFFFFFFF0U
+
+#define NVME_REG_VS 0x08
+
+#define NVME_VS_MAJOR_SHIFT     16
+#define NVME_VS_MINOR_SHIFT      8
+#define NVME_VS_COMPONENT_MASK   0xFFU
 
 void nvme_init()
 {
-    struct pci_device* dev = pci_find_device(0x01, 0x08);
-    if (dev == NULL) {
+    struct pci_device *dev =
+        pci_find_device(NVME_PCI_CLASS, NVME_PCI_SUBCLASS);
+
+    if (dev == NULL || dev->prog_if != NVME_PCI_PROG_IF) {
         kprintf("NVME: Controller not found.\n");
         return;
     }
 
-    kprintf("NVME Header Type: 0x%X\n", dev->header_type);
+    kprintf("NVME: Controller found.\n");
+    
+    const uint32_t bar0 =
+        pci_device_read(dev, PCI_REG4_OFFSET, 4);
 
-    // To determine the address space size for a PCI device, you must
-    // save the original value of the BAR, write a value of all 1's to the register,
-    // then read it back, then restore the original value back.
-    // Reg4 == BAR0.
-    uint32_t bar0 = pci_device_read(dev, PCI_REG4_OFFSET, 4);
-    pci_device_write(dev, PCI_REG4_OFFSET, 4, ~0);
-    uint32_t size_low = pci_device_read(dev, PCI_REG4_OFFSET, 4);
-    pci_device_write(dev, PCI_REG4_OFFSET, 4, bar0);
-
-    // The first bit on the bar address data tells us if this BAR is a
-    // memory space or an I/O bar type.
-
-    // For NVMe, the BAR0 should be a memory space bar type.
-    if (bar0 & 1) {
-        // I/O Space BAR
-        kprintf("**FATAL**: BAR0 in the NVME controller should be memory space.");
-    } else {
-        // Memory Space BAR
-        kprintf("NVME: Memory Space BAR0 verified.\n");
+    if (bar0 & PCI_BAR_IO_SPACE) {
+        kprintf("NVME: Invalid BAR0 address space.\n");
+        return;
     }
 
-    // Bits 1-2 in the BAR address, tells us how wide in size the BAR is.
-    // Let's check if the BAR is 64-bit addressed which is what we expect.
-    // Bits 1-2 will have the value 2 when the BAR is 64-bit.
-    if ((bar0 & 0b111) == 0b100) {
-        kprintf("BAR0 is 64-bit.\n");
+    if ((bar0 & PCI_BAR_TYPE_MASK) != PCI_BAR_TYPE_64BIT) {
+        kprintf("NVME: Expected a 64-bit BAR.\n");
+        return;
     }
-    
-    // The high address value of the BAR is contained in the next 4 bytes.
-    uint32_t base_high = pci_device_read(dev, PCI_REG4_OFFSET + 4, 4);
-    kprintf("NVME Base High: 0x%X\n", base_high);
-    
-    // The low part of the address is in bits 4-31 of BAR0.
-    uint32_t base_low = bar0 & 0xfffffff0;
 
-    // Now we can combine for the 64-bit base address.
-    uint64_t bar0_base_addr = base_low;
-    bar0_base_addr |= ((uint64_t)base_high << 32);
+    const uint32_t bar1 =
+        pci_device_read(dev, PCI_REG5_OFFSET, 4);
 
-    // The amount of memory can then be determined by masking the information bits (1-4),
-    // and incrementing the value by 1.
-    size_t length = ~(size_low & ~0b1111) + 1;
-    kprintf("BAR0 Length: %lu\n", length);
+    // Combine both BARs to obtain the physical register address.
+    const uint64_t physical_address =
+        ((uint64_t)bar1 << 32) |
+        (bar0 & PCI_BAR_ADDRESS_MASK);
+  
+    kprintf("NVME: Physical address: 0x%x\n", physical_address);
 
-    // The NVMe BAR0 registers are located at the bar0_base_addr address.
+    // Map the first page of the controller's register space.
+    void *registers = vm_map_mmio(physical_address, PAGE_SIZE);
+
+    if (registers == NULL) {
+        kprintf("NVME: MMIO mapping failed.\n");
+        return;
+    }
+
+    kprintf("NVME: MMIO mapping successful.\n");
+    kprintf("NVME: Virtual address: 0x%x\n", (uint64_t)registers);
+
+    // Read the controller version register.
+    const uint32_t version =
+        *(volatile uint32_t *)(
+            (uint64_t)registers + NVME_REG_VS
+        );
+
+    const uint32_t major = version >> NVME_VS_MAJOR_SHIFT;
+    const uint32_t minor =
+        (version >> NVME_VS_MINOR_SHIFT) &
+        NVME_VS_COMPONENT_MASK;
     
+    const uint32_t tertiary =
+        version & NVME_VS_COMPONENT_MASK;
 
-    
-    kprintf("NVME: Initialized.\n");
+    kprintf("NVME: Version %d.%d.%d\n",
+        (int)major, (int)minor, (int)tertiary);
 }

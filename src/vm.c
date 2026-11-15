@@ -689,43 +689,43 @@ void *vm_map_mmio(uint64_t phys_addr, size_t size)
 
 void vm_init()
 {
-    kprintf("Initializing virtual memory...\n");
+    kprintf("VMEM: Initializing...\n");
 
     mmio_next_address = VM_MMIO_START;
     
     if (is_paging_enabled()) {
-        kprintf("Paging enabled.\n");
+        kprintf("VMEM: Paging enabled.\n");
     } else {
-        kprintf("Paging disabled.\n");
+        kprintf("VMEM: Paging disabled.\n");
     }
 
     // Check what paging mode we're in (assuming 64-bit mode so no need to check IA32_EFER.LME).
     uint64_t cr4 = get_cr4();
 
     if (!(cr4 & CR4_PAE)) {
-        kprintf("32-bit paging mode.\n");
+        kprintf("VMEM: 32-bit paging mode.\n");
     }
 
     if (cr4 & CR4_PAE && !(cr4 & CR4_LA57)) {
-        kprintf("4-level paging mode.\n");
+        kprintf("VMEM: 4-level paging mode.\n");
     }
 
     if (cr4 & CR4_PAE && cr4 & CR4_LA57) {
-        kprintf("5-level paging mode.\n");
+        kprintf("VMEM: 5-level paging mode.\n");
     }
 
     // Report address widths.
     uint64_t val = cpu_get_address_widths();
     maxphyaddr = val & 0xFF;
     maxlinaddr = val >> 8 & 0xFF;
-    kprintf("MAXPHYADDR: %d bits\n", maxphyaddr);
-    kprintf("MAXLINADDR: %d bits\n", maxlinaddr);
+    kprintf("VMEM: MAXPHYADDR: %d bits\n", maxphyaddr);
+    kprintf("VMEM: MAXLINADDR: %d bits\n", maxlinaddr);
 
     // Determine whether the reserved MMIO region is available.
     mmio_region_available = is_mmio_region_available();
 
     if (mmio_region_available)
-        kprintf("MMIO: Virtual address region available.\n");
+        kprintf("VMEM: MMIO Virtual address region available.\n");
     else
-        kprintf("MMIO: Virtual address region unavailable.\n");
+        kprintf("VMEM: MMIO Virtual address region unavailable.\n");
 }
