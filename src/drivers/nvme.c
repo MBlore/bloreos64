@@ -42,6 +42,14 @@
 #define NVME_REG_AQA  0x24
 #define NVME_REG_ASQ  0x28
 #define NVME_REG_ACQ  0x30
+#define NVME_REG_INTMS 0x0C
+#define NVME_INTERRUPT_MASK_ALL 0xFFFFFFFFU
+#define NVME_REG_DOORBELL_BASE 0x1000
+#define NVME_MMIO_PAGE_COUNT  2
+
+#define NVME_DOORBELLS_PER_QUEUE 2
+#define NVME_DOORBELL_SQ_TAIL   0
+#define NVME_DOORBELL_CQ_HEAD   1
 
 #define NVME_AQA_ACQS_SHIFT     16
 #define NVME_VS_MAJOR_SHIFT     16
@@ -78,6 +86,15 @@
 
 #define NVME_IOSQES_64_BYTES 6
 #define NVME_IOCQES_16_BYTES 4
+
+#define NVME_COMPLETION_PHASE_MASK (1U << 0)
+#define NVME_COMMAND_TIMEOUT_MS    5000
+#define NVME_COMPLETION_STATUS_MASK 0x0FFEU
+
+#define NVME_ADMIN_GET_FEATURES  0x0A
+#define NVME_FEATURE_NUM_QUEUES  0x07
+#define NVME_FEATURE_NSQ_MASK    0xFFFFU
+#define NVME_FEATURE_NCQ_SHIFT   16
 
 // Represents a single 64-byte NVMe submission queue entry.
 typedef struct
@@ -142,6 +159,9 @@ typedef struct
     uint16_t cq_head;
 
     uint8_t cq_phase;
+
+    uint16_t next_command_id;
+    bool failed;
 } nvme_queue_t;
 
 #define NVME_ADMIN_QUEUE_ENTRIES 64
@@ -244,8 +264,11 @@ static void *nvme_map_registers(struct pci_device *dev)
     kprintf("NVME: Physical address: 0x%x\n",
         physical_address);
 
-    // Map the first page of the controller's register space.
-    void *registers = vm_map_mmio(physical_address, PAGE_SIZE);
+    // Map the controller registers and doorbell registers.
+    void *registers = vm_map_mmio(
+        physical_address,
+        PAGE_SIZE * NVME_MMIO_PAGE_COUNT
+    );
 
     if (registers == NULL) {
         kprintf("NVME: MMIO mapping failed.\n");
@@ -428,6 +451,8 @@ static bool nvme_allocate_queue(nvme_queue_t *queue,
     queue->sq_tail = 0;
     queue->cq_head = 0;
     queue->cq_phase = 1;
+    queue->next_command_id = 0;
+    queue->failed = false;
 
     return true;
 }
@@ -532,6 +557,192 @@ static bool nvme_enable_controller(nvme_controller_t *ctrl)
     return true;
 }
 
+// Notify the controller of a queue pointer update.
+static void nvme_ring_doorbell(nvme_controller_t *ctrl,
+                               uint16_t queue_id,
+                               uint32_t doorbell_type,
+                               uint16_t value)
+{
+    const uint64_t offset =
+        NVME_REG_DOORBELL_BASE +
+        ((queue_id * NVME_DOORBELLS_PER_QUEUE +
+          doorbell_type) * ctrl->doorbell_stride);
+
+    // Doorbell registers require a 32-bit MMIO write.
+    *(volatile uint32_t *)(
+        (uint64_t)ctrl->registers + offset
+    ) = value;
+}
+
+// Place a command into the submission queue.
+static void nvme_submit_command(nvme_controller_t *ctrl,
+                                 nvme_queue_t *queue,
+                                 const nvme_command_t *command)
+{
+    nvme_command_t *entries =
+        (nvme_command_t *)queue->submission.virt_addr;
+
+    // Copy the command into the next available entry.
+    entries[queue->sq_tail] = *command;
+
+    // Advance the tail, wrapping around if necessary.
+    queue->sq_tail =
+        (queue->sq_tail + 1) % queue->entry_count;
+
+    // Ensure the command is visible before notifying the controller.
+    __asm__ volatile("sfence" ::: "memory");
+
+    // Notify the controller of the new submission queue tail.
+    nvme_ring_doorbell(ctrl,
+                       queue->queue_id,
+                       NVME_DOORBELL_SQ_TAIL,
+                       queue->sq_tail);
+}
+
+// Wait for the controller to produce a completion entry.
+static bool nvme_wait_completion(nvme_queue_t *queue,
+                                 nvme_completion_t *completion)
+{
+    volatile nvme_completion_t *entries =
+        (volatile nvme_completion_t *)queue->completion.virt_addr;
+
+    const uint64_t start = hpet_get_uptime_ms();
+
+    while (true) {
+        const uint16_t status =
+            entries[queue->cq_head].status;
+
+        // Check whether the controller has produced a new entry.
+        if ((status & NVME_COMPLETION_PHASE_MASK) ==
+            queue->cq_phase) {
+
+            // Order subsequent reads after observing the phase bit.
+            __asm__ volatile("lfence" ::: "memory");
+
+            *completion = entries[queue->cq_head];
+
+            return true;
+        }
+
+        if (hpet_get_uptime_ms() - start >=
+            NVME_COMMAND_TIMEOUT_MS) {
+            kprintf("NVME: Command completion timed out.\n");
+            return false;
+        }
+
+        __asm__ volatile("pause");
+    }
+}
+
+// Acknowledge a processed completion queue entry.
+static void nvme_acknowledge_completion(
+    nvme_controller_t *ctrl,
+    nvme_queue_t *queue)
+{
+    // Advance the completion queue head.
+    queue->cq_head++;
+
+    // Wrap around and toggle the expected phase bit.
+    if (queue->cq_head == queue->entry_count) {
+        queue->cq_head = 0;
+        queue->cq_phase ^= NVME_COMPLETION_PHASE_MASK;
+    }
+
+    // Ensure completion reads finish before releasing the entry.
+    __asm__ volatile("mfence" ::: "memory");
+
+    // Notify the controller of the new completion queue head.
+    nvme_ring_doorbell(ctrl,
+                       queue->queue_id,
+                       NVME_DOORBELL_CQ_HEAD,
+                       queue->cq_head);
+}
+
+// Execute a command synchronously and validate its completion.
+static bool nvme_execute_command(
+    nvme_controller_t *ctrl,
+    nvme_queue_t *queue,
+    nvme_command_t *command,
+    nvme_completion_t *completion)
+{
+    // Do not reuse a queue that has encountered a fatal error.
+    if (queue->failed) {
+        return false;
+    }
+
+    // Assign a command identifier.
+    command->command_id = queue->next_command_id++;
+
+    nvme_submit_command(ctrl, queue, command);
+
+    // Wait for the controller to complete the command.
+    if (!nvme_wait_completion(queue, completion)) {
+        queue->failed = true;
+        return false;
+    }
+
+    nvme_acknowledge_completion(ctrl, queue);
+
+    // Verify that the completion belongs to our command.
+    if (completion->command_id != command->command_id ||
+        completion->sq_id != queue->queue_id) {
+        kprintf("NVME: Unexpected command completion.\n");
+        queue->failed = true;
+        return false;
+    }
+
+    // Check whether the controller completed the command successfully.
+    if (completion->status & NVME_COMPLETION_STATUS_MASK) {
+        kprintf("NVME: Command failed. Status: 0x%x\n",
+            (uint64_t)completion->status);
+        return false;
+    }
+
+    return true;
+}
+
+// Mask controller interrupts for polling-based operation.
+static void nvme_mask_interrupts(nvme_controller_t *ctrl)
+{
+    *(volatile uint32_t *)(
+        (uint64_t)ctrl->registers + NVME_REG_INTMS
+    ) = NVME_INTERRUPT_MASK_ALL;
+
+    kprintf("NVME: Controller interrupts masked.\n");
+}
+
+// Retrieve the currently allocated number of I/O queues.
+static bool nvme_get_number_of_queues(nvme_controller_t *ctrl)
+{
+    nvme_command_t command = {0};
+    nvme_completion_t completion = {0};
+
+    command.opcode = NVME_ADMIN_GET_FEATURES;
+    command.cdw10 = NVME_FEATURE_NUM_QUEUES;
+
+    if (!nvme_execute_command(ctrl,
+                              &ctrl->admin_queue,
+                              &command,
+                              &completion)) {
+        return false;
+    }
+
+    // The returned queue counts are zero-based.
+    const uint32_t submission_queues =
+        (completion.result & NVME_FEATURE_NSQ_MASK) + 1;
+
+    const uint32_t completion_queues =
+        (completion.result >> NVME_FEATURE_NCQ_SHIFT) + 1;
+
+    kprintf("NVME: I/O submission queues: %d\n",
+        (int)submission_queues);
+
+    kprintf("NVME: I/O completion queues: %d\n",
+        (int)completion_queues);
+
+    return true;
+}
+
 void nvme_init()
 {
     struct pci_device *dev =
@@ -596,4 +807,14 @@ void nvme_init()
     if (!nvme_enable_controller(&controller)) {
         return;
     }
+
+    nvme_mask_interrupts(&controller);
+
+    kprintf("NVME: Executing first administration command...\n");
+
+    if (!nvme_get_number_of_queues(&controller)) {
+        return;
+    }
+
+    kprintf("NVME: Administration command successful.\n");
 }
