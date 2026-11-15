@@ -4,117 +4,11 @@
 #include <mem.h>
 #include <vm.h>
 #include "mocks/cpu.h"
-
-#define PAGE_TABLE_ENTRIES 512
-
-#define TEST_PHYSICAL_ADDRESS_WIDTH 40
-#define TEST_LINEAR_ADDRESS_WIDTH 48
-
-#define TEST_PML4_PHYSICAL_ADDRESS PAGE_SIZE
-#define TEST_PDPT_PHYSICAL_ADDRESS (2 * PAGE_SIZE)
-#define TEST_PD_PHYSICAL_ADDRESS   (3 * PAGE_SIZE)
-#define TEST_PT_PHYSICAL_ADDRESS   (4 * PAGE_SIZE)
-#define TEST_PML5_PHYSICAL_ADDRESS (5 * PAGE_SIZE)
-#define TEST_PAGE_PRESENT 0x1ULL
-#define TEST_PAGE_RW   0x2ULL
-#define TEST_PAGE_USER 0x4ULL
-#define TEST_PAGE_SIZE_FLAG (1ULL << 7)
-
-#define TEST_LARGE_PAGE_SIZE (2ULL * 1024 * 1024) // 2 MiB
-#define TEST_HUGE_PAGE_SIZE (1ULL * 1024 * 1024 * 1024) // 1 GiB
-
-#define TEST_LINEAR_ADDRESS_WIDTH_5LEVEL 57ULL
-#define TEST_LARGE_PAGE_PAT (1ULL << 12)
-
-// Simulated CPU state.
-uint64_t mock_cr3;
-uint64_t mock_cr4;
-uint64_t mock_address_widths;
-int mock_paging_enabled;
-
-// Simulated higher-half direct memory mapping.
-uint64_t vmm_higher_half_offset;
+#include "vm_test_helpers.h"
 
 // Address widths maintained by the VMM.
 extern uint32_t maxphyaddr;
 extern uint32_t maxlinaddr;
-
-#define TEST_PAGE_TABLE_COUNT 5
-
-_Alignas(PAGE_SIZE)
-static uint64_t page_tables[TEST_PAGE_TABLE_COUNT][PAGE_TABLE_ENTRIES];
-
-#define pml4 page_tables[0]
-#define pdpt page_tables[1]
-#define pd   page_tables[2]
-#define pt   page_tables[3]
-#define pml5 page_tables[4]
-
-void setUp(void)
-{
-    // Mark every entry in every page table as not present.
-    for (size_t level = 0; level < TEST_PAGE_TABLE_COUNT; level++) {
-        for (size_t i = 0; i < PAGE_TABLE_ENTRIES; i++) {
-            page_tables[level][i] = 0;
-        }
-    }
-
-    // Simulate four-level paging.
-    mock_cr3 = TEST_PML4_PHYSICAL_ADDRESS;
-    mock_cr4 = CR4_PAE;
-    mock_paging_enabled = 1;
-
-    mock_address_widths =
-        TEST_PHYSICAL_ADDRESS_WIDTH |
-        (TEST_LINEAR_ADDRESS_WIDTH << 8);
-
-    // Translate simulated physical addresses into host memory.
-    vmm_higher_half_offset =
-        (uintptr_t)pml4 - TEST_PML4_PHYSICAL_ADDRESS;
-}
-
-void tearDown(void)
-{
-}
-
-static void setup_5level_paging(void)
-{
-    // Simulate a CPU operating in five-level paging mode.
-    mock_cr4 = CR4_PAE | CR4_LA57;
-    mock_cr3 = TEST_PML5_PHYSICAL_ADDRESS;
-    mock_address_widths = TEST_PHYSICAL_ADDRESS_WIDTH |
-                          (TEST_LINEAR_ADDRESS_WIDTH_5LEVEL << 8);
-    vm_init();
-}
-
-static void link_4level_page_tables(void)
-{
-    // Connect the four levels of the paging hierarchy.
-    pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pdpt[0] = TEST_PD_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pd[0] = TEST_PT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-}
-
-static void link_5level_page_tables(void)
-{
-    pml5[0] = TEST_PML4_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    link_4level_page_tables();
-}
-
-static void assert_translation_failure(uint64_t virtual_address)
-{
-    uint64_t result = UINT64_MAX;
-    TEST_ASSERT_FALSE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, result);
-}
-
-static void assert_translation(uint64_t virtual_address,
-                               uint64_t expected_physical_address)
-{
-    uint64_t result = UINT64_MAX;
-    TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
-    TEST_ASSERT_EQUAL_UINT64(expected_physical_address, result);
-}
 
 void test_vm_initialisation(void)
 {

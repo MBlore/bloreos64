@@ -19,6 +19,7 @@
 #define _BLOREOS_VM_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 void vm_init();
 
