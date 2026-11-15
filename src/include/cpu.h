@@ -311,4 +311,15 @@ static inline void isr_restore()
     );
 }
 
+// Invalidate cached translations for the supplied virtual address.
+static inline void invlpg(uint64_t virt_addr)
+{
+    asm volatile (
+        "invlpg (%0)"
+        :
+        : "r"(virt_addr)
+        : "memory"
+    );
+}
+
 #endif

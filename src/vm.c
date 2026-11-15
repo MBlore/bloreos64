@@ -231,20 +231,26 @@ static bool allocate_page_table(uint64_t *entry, vm_allocation_t *allocation, ui
 }
 
 static void rollback_page_tables(vm_allocation_t *allocations,
-                                 size_t allocation_count)
+                                 size_t allocation_count,
+                                 uint64_t virt_addr)
 {
-    // Release newly allocated page tables in reverse order.
-    while (allocation_count > 0) {
-        allocation_count--;
+    // Nothing to roll back if no tables were allocated.
+    if (allocation_count == 0) {
+        return;
+    }
 
-        vm_allocation_t *allocation =
-            &allocations[allocation_count];
-
-        // Restore the original parent page table entry.
+    // Restore the original paging hierarchy in reverse order.
+    for (size_t i = allocation_count; i > 0; i--) {
+        vm_allocation_t *allocation = &allocations[i - 1];
         *allocation->entry = allocation->original_value;
+    }
 
-        // Release the allocated physical page.
-        kfree(allocation->table);
+    // Invalidate cached paging information before releasing memory.
+    invlpg(virt_addr);
+
+    // Release the allocated physical pages in reverse order.
+    for (size_t i = allocation_count; i > 0; i--) {
+        kfree(allocations[i - 1].table);
     }
 }
 
@@ -317,7 +323,7 @@ bool vm_map_page(uint64_t virt_addr,
         if (!(*pml5e & PAGE_PRESENT)) {
             if (!allocate_page_table(
                     pml5e, &allocations[allocation_count], flags)) {
-                rollback_page_tables(allocations, allocation_count);
+                rollback_page_tables(allocations, allocation_count, virt_addr);
                 return false;
             }
 
@@ -326,7 +332,7 @@ bool vm_map_page(uint64_t virt_addr,
 
         // Verify inherited permissions at the fifth level.
         if (!page_permissions_compatible(*pml5e, flags)) {
-            rollback_page_tables(allocations, allocation_count);
+            rollback_page_tables(allocations, allocation_count, virt_addr);
             return false;
         }
 
@@ -341,7 +347,7 @@ bool vm_map_page(uint64_t virt_addr,
     // Allocate a PDPT if one does not exist.
     if (!(*pml4e & PAGE_PRESENT)) {
         if (!allocate_page_table(pml4e, &allocations[allocation_count], flags)) {
-            rollback_page_tables(allocations, allocation_count);
+            rollback_page_tables(allocations, allocation_count, virt_addr);
             return false;
         }
 
@@ -349,7 +355,7 @@ bool vm_map_page(uint64_t virt_addr,
     }
 
     if (!page_permissions_compatible(*pml4e, flags)) {
-        rollback_page_tables(allocations, allocation_count);
+        rollback_page_tables(allocations, allocation_count, virt_addr);
         return false;
     }
 
@@ -360,7 +366,7 @@ bool vm_map_page(uint64_t virt_addr,
     // Allocate a Page Directory if one does not exist.
     if (!(*pdpte & PAGE_PRESENT)) {
         if (!allocate_page_table(pdpte, &allocations[allocation_count], flags)) {
-            rollback_page_tables(allocations, allocation_count);
+            rollback_page_tables(allocations, allocation_count, virt_addr);
             return false;
         }
 
@@ -373,7 +379,7 @@ bool vm_map_page(uint64_t virt_addr,
     }
 
     if (!page_permissions_compatible(*pdpte, flags)) {
-        rollback_page_tables(allocations, allocation_count);
+        rollback_page_tables(allocations, allocation_count, virt_addr);
         return false;
     }
 
@@ -384,7 +390,7 @@ bool vm_map_page(uint64_t virt_addr,
     // Allocate a page table if one does not exist.
     if (!(*pde & PAGE_PRESENT)) {
         if (!allocate_page_table(pde, &allocations[allocation_count], flags)) {
-            rollback_page_tables(allocations, allocation_count);
+            rollback_page_tables(allocations, allocation_count, virt_addr);
             return false;
         }
 
@@ -397,7 +403,7 @@ bool vm_map_page(uint64_t virt_addr,
     }
 
     if (!page_permissions_compatible(*pde, flags)) {
-        rollback_page_tables(allocations, allocation_count);
+        rollback_page_tables(allocations, allocation_count, virt_addr);
         return false;
     }
 
@@ -412,6 +418,9 @@ bool vm_map_page(uint64_t virt_addr,
 
     // Create the mapping.
     *pte = phys_addr | flags | PAGE_PRESENT;
+
+    // Invalidate cached translations for this virtual address.
+    invlpg(virt_addr);
 
     return true;
 }

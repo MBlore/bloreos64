@@ -577,8 +577,46 @@ void test_vm_map_5level_allocation_rollback(void)
     // Verify that no mapping was created.
     assert_translation_failure(virtual_address);
 
+    // Verify that rollback invalidated cached paging information.
+    TEST_ASSERT_EQUAL_UINT64(1, mock_invlpg_count);
+
+    // Verify that the correct virtual address was invalidated.
+    TEST_ASSERT_EQUAL_UINT64(
+        virtual_address,
+        mock_invlpg_address
+    );
+
     // Verify that all three allocated pages were released.
     TEST_ASSERT_NOT_NULL(kpalloc(available_pages));
+}
+
+void test_vm_map_tlb_invalidation(void)
+{
+    vm_init();
+
+    const uint64_t virtual_address = PAGE_SIZE;
+    const uint64_t physical_address = 32 * PAGE_SIZE;
+
+    link_4level_page_tables();
+
+    // Verify that no invalidation has occurred yet.
+    TEST_ASSERT_EQUAL_UINT64(0, mock_invlpg_count);
+
+    // Create a new mapping.
+    TEST_ASSERT_TRUE(vm_map_page(
+        virtual_address,
+        physical_address,
+        TEST_PAGE_RW
+    ));
+
+    // Verify that exactly one TLB invalidation occurred.
+    TEST_ASSERT_EQUAL_UINT64(1, mock_invlpg_count);
+
+    // Verify that the correct virtual address was invalidated.
+    TEST_ASSERT_EQUAL_UINT64(
+        virtual_address,
+        mock_invlpg_address
+    );
 }
 
 int main(void)
@@ -607,6 +645,7 @@ int main(void)
     RUN_TEST(test_vm_map_5level_existing_tables);
     RUN_TEST(test_vm_map_5level_missing_tables);
     RUN_TEST(test_vm_map_5level_allocation_rollback);
+    RUN_TEST(test_vm_map_tlb_invalidation);
 
     return UNITY_END();
 }

@@ -45,6 +45,10 @@ extern uint64_t page_tables[TEST_PAGE_TABLE_COUNT][PAGE_TABLE_ENTRIES];
 #define pt   page_tables[3]
 #define pml5 page_tables[4]
 
+// Simulated TLB invalidation state.
+extern size_t mock_invlpg_count;
+extern uint64_t mock_invlpg_address;
+
 // Paging configuration.
 void setup_5level_paging(void);
 

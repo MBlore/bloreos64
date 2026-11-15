@@ -36,4 +36,6 @@ static inline int is_paging_enabled(void)
     return mock_paging_enabled;
 }
 
+void invlpg(uint64_t virt_addr);
+
 #endif

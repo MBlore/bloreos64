@@ -9,6 +9,9 @@ uint64_t mock_cr4;
 uint64_t mock_address_widths;
 int mock_paging_enabled;
 
+size_t mock_invlpg_count;
+uint64_t mock_invlpg_address;
+
 // Simulated higher-half direct memory mapping.
 uint64_t vmm_higher_half_offset;
 
@@ -43,6 +46,10 @@ void setUp(void)
 
     // Reset the allocator before each test.
     mock_allocation_cursor = TEST_RESERVED_PAGE_COUNT;
+
+    // Reset simulated TLB invalidation state.
+    mock_invlpg_count = 0;
+    mock_invlpg_address = 0;
 }
 
 void tearDown(void)
@@ -124,4 +131,10 @@ void kfree(void *ptr)
     if (ptr == (void *)page_tables[mock_allocation_cursor - 1]) {
         mock_allocation_cursor--;
     }
+}
+
+void invlpg(uint64_t virt_addr)
+{
+    mock_invlpg_count++;
+    mock_invlpg_address = virt_addr;
 }
