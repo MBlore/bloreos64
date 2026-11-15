@@ -92,11 +92,11 @@ uint32_t _pci_mm_read(uint8_t bus, uint8_t device, uint8_t function, uint32_t of
 
     switch(size) {
         case 1:
-            return *(uint8_t*)addr;
+            return *(volatile uint8_t*)addr;
         case 2:
-            return *(uint16_t*)addr;
+            return *(volatile uint16_t*)addr;
         case 4:
-            return *(uint32_t*)addr;
+            return *(volatile uint32_t*)addr;
     }
 
     return 0;
@@ -122,13 +122,13 @@ void pci_device_write(struct pci_device *dev, uint32_t offset, uint8_t size, uin
 
     switch(size) {
         case 1:
-            *(uint8_t*)addr = (uint8_t)val;
+            *(volatile uint8_t*)addr = (uint8_t)val;
             return;
         case 2:
-            *(uint16_t*)addr = (uint16_t)val;
+            *(volatile uint16_t*)addr = (uint16_t)val;
             return;
         case 4:
-            *(uint32_t*)addr = val;
+            *(volatile uint32_t*)addr = val;
             return;
     }
 }

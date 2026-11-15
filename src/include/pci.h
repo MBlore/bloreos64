@@ -28,6 +28,10 @@
 #define PCI_REG4_OFFSET 0x10    // BAR0 Base Address
 #define PCI_REG5_OFFSET 0x14    // BAR1 Base Address
 
+// PCI Command Register flags.
+#define PCI_COMMAND_MEMORY_SPACE (1U << 1)
+#define PCI_COMMAND_BUS_MASTER   (1U << 2)
+
 struct pci_device {
     uint8_t class_code;
     uint8_t sub_class_code;
