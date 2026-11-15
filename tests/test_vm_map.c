@@ -196,6 +196,168 @@ void test_vm_map_inside_1gb_page(void)
     );
 }
 
+void test_vm_map_missing_pt(void)
+{
+    vm_init();
+
+    const uint64_t virtual_address = PAGE_SIZE;
+    const uint64_t physical_address = 32 * PAGE_SIZE;
+
+    // Construct the hierarchy without a final page table.
+    pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
+    pdpt[0] = TEST_PD_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
+
+    // Verify that the page table does not yet exist.
+    TEST_ASSERT_EQUAL_UINT64(0, pd[0]);
+
+    // Create a mapping that requires a new page table.
+    TEST_ASSERT_TRUE(vm_map_page(
+        virtual_address,
+        physical_address,
+        TEST_PAGE_RW
+    ));
+
+    // Verify that the new page table is present.
+    TEST_ASSERT_TRUE(pd[0] & TEST_PAGE_PRESENT);
+
+    // Verify that the new mapping works.
+    assert_translation(virtual_address, physical_address);
+}
+
+void test_vm_map_missing_pd(void)
+{
+    vm_init();
+
+    const uint64_t virtual_address = PAGE_SIZE;
+    const uint64_t physical_address = 32 * PAGE_SIZE;
+
+    // Construct a hierarchy containing only PML4 and PDPT.
+    pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
+
+    // Verify that the Page Directory does not exist.
+    TEST_ASSERT_EQUAL_UINT64(0, pdpt[0]);
+
+    // Create a mapping requiring two new page tables.
+    TEST_ASSERT_TRUE(vm_map_page(
+        virtual_address,
+        physical_address,
+        TEST_PAGE_RW
+    ));
+
+    // Verify that the new Page Directory is present.
+    TEST_ASSERT_TRUE(pdpt[0] & TEST_PAGE_PRESENT);
+
+    // Verify the completed mapping.
+    assert_translation(virtual_address, physical_address);
+}
+
+void test_vm_map_missing_pdpt(void)
+{
+    vm_init();
+
+    const uint64_t virtual_address = PAGE_SIZE;
+    const uint64_t physical_address = 32 * PAGE_SIZE;
+
+    // Verify that the PML4 has no PDPT linked to it.
+    TEST_ASSERT_EQUAL_UINT64(0, pml4[0]);
+
+    // Create a mapping requiring three new page tables.
+    TEST_ASSERT_TRUE(vm_map_page(
+        virtual_address,
+        physical_address,
+        TEST_PAGE_RW
+    ));
+
+    // Verify that the new PDPT is present.
+    TEST_ASSERT_TRUE(pml4[0] & TEST_PAGE_PRESENT);
+
+    // Verify the completed mapping.
+    assert_translation(virtual_address, physical_address);
+}
+
+void test_vm_map_allocation_failure(void)
+{
+    vm_init();
+
+    const uint64_t virtual_address = PAGE_SIZE;
+    const uint64_t physical_address = 32 * PAGE_SIZE;
+
+    // Exhaust all available physical memory.
+    TEST_ASSERT_NOT_NULL(kpalloc(TEST_ALLOCATABLE_PAGE_COUNT));
+
+    // Attempt to create a mapping requiring new page tables.
+    TEST_ASSERT_FALSE(vm_map_page(
+        virtual_address,
+        physical_address,
+        TEST_PAGE_RW
+    ));
+
+    // Verify that the PML4 entry remains unchanged.
+    TEST_ASSERT_EQUAL_UINT64(0, pml4[0]);
+
+    // Verify that no mapping was created.
+    assert_translation_failure(virtual_address);
+}
+
+void test_vm_map_partial_allocation_failure(void)
+{
+    vm_init();
+
+    const uint64_t virtual_address = PAGE_SIZE;
+    const uint64_t physical_address = 32 * PAGE_SIZE;
+
+    // Leave only one physical page available.
+    TEST_ASSERT_NOT_NULL(
+        kpalloc(TEST_ALLOCATABLE_PAGE_COUNT - 1)
+    );
+
+    // Creating this mapping requires three physical pages.
+    TEST_ASSERT_FALSE(vm_map_page(
+        virtual_address,
+        physical_address,
+        TEST_PAGE_RW
+    ));
+
+    // Verify that the original paging hierarchy is unchanged.
+    TEST_ASSERT_EQUAL_UINT64(0, pml4[0]);
+
+    // Verify that no mapping was created.
+    assert_translation_failure(virtual_address);
+
+    // Verify that the allocated physical page was released.
+    TEST_ASSERT_NOT_NULL(kpalloc(1));
+}
+
+void test_vm_map_multiple_allocation_rollback(void)
+{
+    vm_init();
+
+    const uint64_t virtual_address = PAGE_SIZE;
+    const uint64_t physical_address = 32 * PAGE_SIZE;
+    const size_t available_pages = 2;
+
+    // Leave only two physical pages available.
+    TEST_ASSERT_NOT_NULL(
+        kpalloc(TEST_ALLOCATABLE_PAGE_COUNT - available_pages)
+    );
+
+    // Creating this mapping requires three physical pages.
+    TEST_ASSERT_FALSE(vm_map_page(
+        virtual_address,
+        physical_address,
+        TEST_PAGE_RW
+    ));
+
+    // Verify that the original paging hierarchy is restored.
+    TEST_ASSERT_EQUAL_UINT64(0, pml4[0]);
+
+    // Verify that no mapping was created.
+    assert_translation_failure(virtual_address);
+
+    // Verify that both allocated pages have been released.
+    TEST_ASSERT_NOT_NULL(kpalloc(available_pages));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -208,6 +370,12 @@ int main(void)
     RUN_TEST(test_vm_map_existing_mapping);
     RUN_TEST(test_vm_map_inside_2mb_page);
     RUN_TEST(test_vm_map_inside_1gb_page);
+    RUN_TEST(test_vm_map_missing_pt);
+    RUN_TEST(test_vm_map_missing_pd);
+    RUN_TEST(test_vm_map_missing_pdpt);
+    RUN_TEST(test_vm_map_allocation_failure);
+    RUN_TEST(test_vm_map_partial_allocation_failure);
+    RUN_TEST(test_vm_map_multiple_allocation_rollback);
 
     return UNITY_END();
 }

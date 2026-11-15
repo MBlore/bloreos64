@@ -16,6 +16,9 @@ uint64_t vmm_higher_half_offset;
 _Alignas(PAGE_SIZE)
 uint64_t page_tables[TEST_PAGE_TABLE_COUNT][PAGE_TABLE_ENTRIES];
 
+// Index of the next available simulated physical page.
+static size_t mock_allocation_cursor;
+
 void setUp(void)
 {
     // Mark every entry in every page table as not present.
@@ -37,6 +40,9 @@ void setUp(void)
     // Translate simulated physical addresses into host memory.
     vmm_higher_half_offset =
         (uintptr_t)pml4 - TEST_PML4_PHYSICAL_ADDRESS;
+
+    // Reset the allocator before each test.
+    mock_allocation_cursor = TEST_RESERVED_PAGE_COUNT;
 }
 
 void tearDown(void)
@@ -80,4 +86,42 @@ void assert_translation(uint64_t virtual_address,
     uint64_t result = UINT64_MAX;
     TEST_ASSERT_TRUE(vm_translate(virtual_address, &result));
     TEST_ASSERT_EQUAL_UINT64(expected_physical_address, result);
+}
+
+void *kpalloc(size_t numPages)
+{
+    // Reject zero-sized allocations.
+    if (numPages == 0) {
+        return NULL;
+    }
+
+    // Reject allocations exceeding the remaining memory.
+    if (numPages > TEST_PAGE_TABLE_COUNT - mock_allocation_cursor) {
+        return NULL;
+    }
+
+    // Obtain the virtual address of the first available page.
+    void *address = page_tables[mock_allocation_cursor];
+
+    // Reserve the requested number of contiguous pages.
+    mock_allocation_cursor += numPages;
+
+    return address;
+}
+
+void kfree(void *ptr)
+{
+    if (ptr == NULL) {
+        return;
+    }
+
+    // Never release reserved paging structures.
+    if (mock_allocation_cursor <= TEST_RESERVED_PAGE_COUNT) {
+        return;
+    }
+
+    // Release the most recently allocated page.
+    if (ptr == (void *)page_tables[mock_allocation_cursor - 1]) {
+        mock_allocation_cursor--;
+    }
 }

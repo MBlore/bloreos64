@@ -187,6 +187,61 @@ bool vm_translate(uint64_t virt_addr, uint64_t *phys_addr)
     return true;
 }
 
+// Maximum intermediate tables required for five-level paging.
+#define MAX_NEW_PAGE_TABLES 4
+
+// Records a newly allocated page table for rollback.
+typedef struct {
+    uint64_t *entry;
+    uint64_t original_value;
+    void *table;
+} vm_allocation_t;
+
+static bool allocate_page_table(uint64_t *entry, vm_allocation_t *allocation)
+{
+    // Allocate one physical page for the new page table.
+    void *table = kpalloc(1);
+
+    if (table == NULL) {
+        return false;
+    }
+
+    // Initialise all page table entries to zero.
+    memset(table, 0, PAGE_SIZE);
+
+    // Convert the higher-half virtual address to a physical address.
+    const uint64_t physical_address =
+        (uint64_t)table - vmm_higher_half_offset;
+
+    // Record the allocation before modifying the parent entry.
+    allocation->entry = entry;
+    allocation->original_value = *entry;
+    allocation->table = table;
+
+    // Link the new page table into its parent.
+    *entry = physical_address | PAGE_PRESENT | PAGE_RW;
+
+    return true;
+}
+
+static void rollback_page_tables(vm_allocation_t *allocations,
+                                 size_t allocation_count)
+{
+    // Release newly allocated page tables in reverse order.
+    while (allocation_count > 0) {
+        allocation_count--;
+
+        vm_allocation_t *allocation =
+            &allocations[allocation_count];
+
+        // Restore the original parent page table entry.
+        *allocation->entry = allocation->original_value;
+
+        // Release the allocated physical page.
+        kfree(allocation->table);
+    }
+}
+
 bool vm_map_page(uint64_t virt_addr,
                  uint64_t phys_addr,
                  uint64_t flags)
@@ -224,32 +279,64 @@ bool vm_map_page(uint64_t virt_addr,
     const uint64_t addrmask =
         physical_address_mask & ~alignment_mask;
 
+    // Track page tables allocated during this mapping operation.
+    vm_allocation_t allocations[MAX_NEW_PAGE_TABLES];
+    size_t allocation_count = 0;
+
     // Locate the PML4 using CR3.
     uint64_t *pml4 = PHYS_TO_VIRT(get_cr3() & addrmask);
-    uint64_t pml4e = pml4[PML4_INDEX(virt_addr)];
+    uint64_t *pml4e = &pml4[PML4_INDEX(virt_addr)];
 
-    if (!(pml4e & PAGE_PRESENT)) {
-        return false;
+    // Allocate a PDPT if one does not exist.
+    if (!(*pml4e & PAGE_PRESENT)) {
+        if (!allocate_page_table(pml4e, &allocations[allocation_count])) {
+            rollback_page_tables(allocations, allocation_count);
+            return false;
+        }
+
+        allocation_count++;
     }
 
     // Locate the Page Directory Pointer Table.
-    uint64_t *pdpt = PHYS_TO_VIRT(pml4e & addrmask);
-    uint64_t pdpte = pdpt[PDPT_INDEX(virt_addr)];
+    uint64_t *pdpt = PHYS_TO_VIRT(*pml4e & addrmask);
+    uint64_t *pdpte = &pdpt[PDPT_INDEX(virt_addr)];
 
-    if (!(pdpte & PAGE_PRESENT) || (pdpte & PAGE_PS)) {
+    // Allocate a Page Directory if one does not exist.
+    if (!(*pdpte & PAGE_PRESENT)) {
+        if (!allocate_page_table(pdpte, &allocations[allocation_count])) {
+            rollback_page_tables(allocations, allocation_count);
+            return false;
+        }
+
+        allocation_count++;
+    }
+
+    // Refuse to overwrite an existing 1 GiB mapping.
+    if (*pdpte & PAGE_PS) {
         return false;
     }
 
     // Locate the Page Directory.
-    uint64_t *pd = PHYS_TO_VIRT(pdpte & addrmask);
-    uint64_t pde = pd[PD_INDEX(virt_addr)];
+    uint64_t *pd = PHYS_TO_VIRT(*pdpte & addrmask);
+    uint64_t *pde = &pd[PD_INDEX(virt_addr)];
 
-    if (!(pde & PAGE_PRESENT) || (pde & PAGE_PS)) {
+    // Allocate a page table if one does not exist.
+    if (!(*pde & PAGE_PRESENT)) {
+        if (!allocate_page_table(pde, &allocations[allocation_count])) {
+            rollback_page_tables(allocations, allocation_count);
+            return false;
+        }
+
+        allocation_count++;
+    }
+
+    // Refuse to overwrite an existing 2 MiB mapping.
+    if (*pde & PAGE_PS) {
         return false;
     }
 
     // Locate the final Page Table entry.
-    uint64_t *pt = PHYS_TO_VIRT(pde & addrmask);
+    uint64_t *pt = PHYS_TO_VIRT(*pde & addrmask);
     uint64_t *pte = &pt[PT_INDEX(virt_addr)];
 
     // Never overwrite an existing mapping.

@@ -25,7 +25,15 @@
 #define TEST_LARGE_PAGE_SIZE (2ULL * 1024 * 1024)
 #define TEST_HUGE_PAGE_SIZE  (1ULL * 1024 * 1024 * 1024)
 
-#define TEST_PAGE_TABLE_COUNT 5
+// Pages reserved for existing paging structures.
+#define TEST_RESERVED_PAGE_COUNT 5
+
+// Additional pages available to the mock physical allocator.
+#define TEST_ALLOCATABLE_PAGE_COUNT 8
+
+// Total simulated physical memory in pages.
+#define TEST_PAGE_TABLE_COUNT \
+    (TEST_RESERVED_PAGE_COUNT + TEST_ALLOCATABLE_PAGE_COUNT)
 
 // Simulated physical memory containing the page tables.
 extern uint64_t page_tables[TEST_PAGE_TABLE_COUNT][PAGE_TABLE_ENTRIES];
