@@ -16,14 +16,10 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include <stdint.h>
+#include <stddef.h>
 #include <pci.h>
 #include <nvme.h>
 #include <str.h>
-#include <kernel.h>
-#include <vm.h>
-#include <mem.h>
-#include <hpet.h>
 #include <dma.h>
 
 #include "internal.h"

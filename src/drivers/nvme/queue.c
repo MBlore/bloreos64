@@ -57,7 +57,7 @@ bool nvme_allocate_queue(nvme_queue_t *queue,
 }
 
 // Notify the controller of a queue pointer update.
-void nvme_ring_doorbell(nvme_controller_t *ctrl,
+static void nvme_ring_doorbell(nvme_controller_t *ctrl,
                                uint16_t queue_id,
                                uint32_t doorbell_type,
                                uint16_t value)
@@ -74,7 +74,7 @@ void nvme_ring_doorbell(nvme_controller_t *ctrl,
 }
 
 // Place a command into the submission queue.
-void nvme_submit_command(nvme_controller_t *ctrl,
+static void nvme_submit_command(nvme_controller_t *ctrl,
                                  nvme_queue_t *queue,
                                  const nvme_command_t *command)
 {
@@ -99,7 +99,7 @@ void nvme_submit_command(nvme_controller_t *ctrl,
 }
 
 // Wait for the controller to produce a completion entry.
-bool nvme_wait_completion(nvme_queue_t *queue,
+static bool nvme_wait_completion(nvme_queue_t *queue,
                                  nvme_completion_t *completion)
 {
     volatile nvme_completion_t *entries =
@@ -134,7 +134,7 @@ bool nvme_wait_completion(nvme_queue_t *queue,
 }
 
 // Acknowledge a processed completion queue entry.
-void nvme_acknowledge_completion(
+static void nvme_acknowledge_completion(
     nvme_controller_t *ctrl,
     nvme_queue_t *queue)
 {

@@ -26,7 +26,7 @@
 #include "internal.h"
 
 // Wait for the controller to enter the requested ready state.
-bool nvme_wait_ready(void *registers,
+static bool nvme_wait_ready(void *registers,
                             bool ready,
                             uint32_t timeout_ms)
 {
