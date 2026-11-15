@@ -30,6 +30,8 @@
 #define PAGE_USER       0x4
 #define PAGE_PS (1ULL << 7)
 
+#define PAGE_MAP_ALLOWED_FLAGS (PAGE_RW | PAGE_USER)
+
 #define PAGE_SIZE_2MB (2ULL * 1024 * 1024)
 #define PAGE_SIZE_1GB (1ULL * 1024 * 1024 * 1024)
 
@@ -197,7 +199,7 @@ typedef struct {
     void *table;
 } vm_allocation_t;
 
-static bool allocate_page_table(uint64_t *entry, vm_allocation_t *allocation)
+static bool allocate_page_table(uint64_t *entry, vm_allocation_t *allocation, uint64_t flags)
 {
     // Allocate one physical page for the new page table.
     void *table = kpalloc(1);
@@ -218,8 +220,12 @@ static bool allocate_page_table(uint64_t *entry, vm_allocation_t *allocation)
     allocation->original_value = *entry;
     allocation->table = table;
 
+    // Intermediate entries are writable and optionally user-accessible.
+    const uint64_t parent_flags =
+        PAGE_PRESENT | PAGE_RW | (flags & PAGE_USER);
+
     // Link the new page table into its parent.
-    *entry = physical_address | PAGE_PRESENT | PAGE_RW;
+    *entry = physical_address | parent_flags;
 
     return true;
 }
@@ -242,10 +248,31 @@ static void rollback_page_tables(vm_allocation_t *allocations,
     }
 }
 
+static bool page_permissions_compatible(uint64_t entry,
+                                        uint64_t flags)
+{
+    // A writable mapping requires a writable parent entry.
+    if ((flags & PAGE_RW) && !(entry & PAGE_RW)) {
+        return false;
+    }
+
+    // A user-accessible mapping requires a user-accessible parent.
+    if ((flags & PAGE_USER) && !(entry & PAGE_USER)) {
+        return false;
+    }
+
+    return true;
+}
+
 bool vm_map_page(uint64_t virt_addr,
                  uint64_t phys_addr,
                  uint64_t flags)
 {
+    // Reject unsupported flags before modifying any paging structures.
+    if (flags & ~(uint64_t)PAGE_MAP_ALLOWED_FLAGS) {
+        return false;
+    }
+
     // Both addresses must be aligned to a 4 KiB page boundary.
     const uint64_t alignment_mask = PAGE_SIZE - 1;
 
@@ -270,11 +297,6 @@ bool vm_map_page(uint64_t virt_addr,
         return false;
     }
 
-    // Five-level mapping is not yet supported.
-    if (get_cr4() & CR4_LA57) {
-        return false;
-    }
-
     // Extract physical addresses from page table entries.
     const uint64_t addrmask =
         physical_address_mask & ~alignment_mask;
@@ -283,18 +305,52 @@ bool vm_map_page(uint64_t virt_addr,
     vm_allocation_t allocations[MAX_NEW_PAGE_TABLES];
     size_t allocation_count = 0;
 
-    // Locate the PML4 using CR3.
-    uint64_t *pml4 = PHYS_TO_VIRT(get_cr3() & addrmask);
+    // Obtain the physical address of the root paging structure.
+    uint64_t pml4addr = get_cr3() & addrmask;
+
+    // In five-level paging, CR3 points to the PML5.
+    if (get_cr4() & CR4_LA57) {
+        uint64_t *pml5 = PHYS_TO_VIRT(pml4addr);
+        uint64_t *pml5e = &pml5[PML5_INDEX(virt_addr)];
+
+        // Allocate a PML4 if one does not exist.
+        if (!(*pml5e & PAGE_PRESENT)) {
+            if (!allocate_page_table(
+                    pml5e, &allocations[allocation_count], flags)) {
+                rollback_page_tables(allocations, allocation_count);
+                return false;
+            }
+
+            allocation_count++;
+        }
+
+        // Verify inherited permissions at the fifth level.
+        if (!page_permissions_compatible(*pml5e, flags)) {
+            rollback_page_tables(allocations, allocation_count);
+            return false;
+        }
+
+        // Extract the physical address of the PML4.
+        pml4addr = *pml5e & addrmask;
+    }
+
+    // Continue walking the standard four-level hierarchy.
+    uint64_t *pml4 = PHYS_TO_VIRT(pml4addr);
     uint64_t *pml4e = &pml4[PML4_INDEX(virt_addr)];
 
     // Allocate a PDPT if one does not exist.
     if (!(*pml4e & PAGE_PRESENT)) {
-        if (!allocate_page_table(pml4e, &allocations[allocation_count])) {
+        if (!allocate_page_table(pml4e, &allocations[allocation_count], flags)) {
             rollback_page_tables(allocations, allocation_count);
             return false;
         }
 
         allocation_count++;
+    }
+
+    if (!page_permissions_compatible(*pml4e, flags)) {
+        rollback_page_tables(allocations, allocation_count);
+        return false;
     }
 
     // Locate the Page Directory Pointer Table.
@@ -303,7 +359,7 @@ bool vm_map_page(uint64_t virt_addr,
 
     // Allocate a Page Directory if one does not exist.
     if (!(*pdpte & PAGE_PRESENT)) {
-        if (!allocate_page_table(pdpte, &allocations[allocation_count])) {
+        if (!allocate_page_table(pdpte, &allocations[allocation_count], flags)) {
             rollback_page_tables(allocations, allocation_count);
             return false;
         }
@@ -316,13 +372,18 @@ bool vm_map_page(uint64_t virt_addr,
         return false;
     }
 
+    if (!page_permissions_compatible(*pdpte, flags)) {
+        rollback_page_tables(allocations, allocation_count);
+        return false;
+    }
+
     // Locate the Page Directory.
     uint64_t *pd = PHYS_TO_VIRT(*pdpte & addrmask);
     uint64_t *pde = &pd[PD_INDEX(virt_addr)];
 
     // Allocate a page table if one does not exist.
     if (!(*pde & PAGE_PRESENT)) {
-        if (!allocate_page_table(pde, &allocations[allocation_count])) {
+        if (!allocate_page_table(pde, &allocations[allocation_count], flags)) {
             rollback_page_tables(allocations, allocation_count);
             return false;
         }
@@ -332,6 +393,11 @@ bool vm_map_page(uint64_t virt_addr,
 
     // Refuse to overwrite an existing 2 MiB mapping.
     if (*pde & PAGE_PS) {
+        return false;
+    }
+
+    if (!page_permissions_compatible(*pde, flags)) {
+        rollback_page_tables(allocations, allocation_count);
         return false;
     }
 

@@ -62,9 +62,9 @@ void setup_5level_paging(void)
 void link_4level_page_tables(void)
 {
     // Connect the four levels of the paging hierarchy.
-    pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pdpt[0] = TEST_PD_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
-    pd[0] = TEST_PT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
+    pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT | TEST_PAGE_RW;
+    pdpt[0] = TEST_PD_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT | TEST_PAGE_RW;
+    pd[0] = TEST_PT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT | TEST_PAGE_RW;
 }
 
 void link_5level_page_tables(void)
