@@ -11,22 +11,59 @@ make test - runs the unit tests.
 
 ## Dependencies
 
-mtools  
+mtools
+
 xorriso
+
 gdisk
+
 qemu
+
 ovmf
+
 gdb
 
 # Setup
 
 git clone --recurse-submodules https://github.com/MBlore/bloreos64.git
 (or run 'git submodule update --init --recursive' if you've already cloned it)
+
 cd bloreos64
+
 mkdir -p logs
+
 mkdir -p iso_root
+
 mkdir -p ovmf
+
 cp /usr/share/OVMF/OVMF_CODE_4M.fd ovmf/OVMF.fd
+
 cp /usr/share/qemu/OVMF.fd ovmf/OVMF.fd
+
 make
+
+make data
+
+make run
+
+## Building the test data disk
+
+Run `make data` to create/refresh the 128 MiB disk image
+containing a GPT partition table and FAT32 filesystem.
+
+Files from the `disk-files/` directory are copied
+into the filesystem.
+
+Warning: Running this command recreates `data.hdd`
+and destroys any existing data on it.
+
+## Development
+
+Compile the kernel:
+
+make
+
+
+Run QEmu with latest build:
+
 make run

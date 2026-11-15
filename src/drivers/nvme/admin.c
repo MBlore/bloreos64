@@ -44,10 +44,10 @@ bool nvme_get_number_of_queues(nvme_controller_t *ctrl)
     const uint32_t completion_queues =
         (completion.result >> NVME_FEATURE_NCQ_SHIFT) + 1;
 
-    kprintf("NVME: I/O submission queues: %d\n",
+    nvme_log("NVME: I/O submission queues: %d\n",
         (int)submission_queues);
 
-    kprintf("NVME: I/O completion queues: %d\n",
+    nvme_log("NVME: I/O completion queues: %d\n",
         (int)completion_queues);
 
     return true;
@@ -100,7 +100,7 @@ bool nvme_identify_controller(nvme_controller_t *ctrl)
     }
 
     if (!dma_alloc(NVME_IDENTIFY_DATA_SIZE, &buffer)) {
-        kprintf("NVME: Identify buffer allocation failed.\n");
+        nvme_log("NVME: Identify buffer allocation failed.\n");
         return false;
     }
 
@@ -114,7 +114,7 @@ bool nvme_identify_controller(nvme_controller_t *ctrl)
     if (ctrl->admin_queue.failed) {
         // The controller may still be accessing the DMA buffer.
         // Do not release this memory until the controller is reset.
-        kprintf("NVME: Identify buffer retained for safety.\n");
+        nvme_log("NVME: Identify buffer retained for safety.\n");
         return false;
     }
 
@@ -140,11 +140,11 @@ bool nvme_identify_controller(nvme_controller_t *ctrl)
         const uint32_t namespaces =
             *(const uint32_t *)(data + NVME_IDENTIFY_NN_OFFSET);
 
-        kprintf("NVME: Controller identification successful.\n");
-        kprintf("NVME: Model: %s\n", model);
-        kprintf("NVME: Serial: %s\n", serial);
-        kprintf("NVME: Firmware: %s\n", firmware);
-        kprintf("NVME: Number of namespaces: %lu\n",
+        nvme_log("NVME: Controller identification successful.\n");
+        nvme_log("NVME: Model: %s\n", model);
+        nvme_log("NVME: Serial: %s\n", serial);
+        nvme_log("NVME: Firmware: %s\n", firmware);
+        nvme_log("NVME: Number of namespaces: %lu\n",
             (uint64_t)namespaces);
     }
 
@@ -163,7 +163,7 @@ bool nvme_identify_active_namespaces(nvme_controller_t *ctrl)
     }
 
     if (!dma_alloc(NVME_IDENTIFY_DATA_SIZE, &buffer)) {
-        kprintf("NVME: Namespace list allocation failed.\n");
+        nvme_log("NVME: Namespace list allocation failed.\n");
         return false;
     }
 
@@ -176,7 +176,7 @@ bool nvme_identify_active_namespaces(nvme_controller_t *ctrl)
 
     if (ctrl->admin_queue.failed) {
         // The controller may still be accessing this buffer.
-        kprintf("NVME: Identify buffer retained for safety.\n");
+        nvme_log("NVME: Identify buffer retained for safety.\n");
         return false;
     }
 
@@ -193,13 +193,13 @@ bool nvme_identify_active_namespaces(nvme_controller_t *ctrl)
                 break;
             }
 
-            kprintf("NVME: Active namespace ID: %lu\n",
+            nvme_log("NVME: Active namespace ID: %lu\n",
                 (uint64_t)namespaces[i]);
 
             count++;
         }
 
-        kprintf("NVME: Active namespaces: %lu\n",
+        nvme_log("NVME: Active namespaces: %lu\n",
             (uint64_t)count);
     }
 
@@ -220,7 +220,7 @@ bool nvme_identify_namespace(nvme_controller_t *ctrl,
     }
 
     if (!dma_alloc(NVME_IDENTIFY_DATA_SIZE, &buffer)) {
-        kprintf("NVME: Identify buffer allocation failed.\n");
+        nvme_log("NVME: Identify buffer allocation failed.\n");
         return false;
     }
 
@@ -233,7 +233,7 @@ bool nvme_identify_namespace(nvme_controller_t *ctrl,
 
     if (ctrl->admin_queue.failed) {
         // The controller may still be accessing this buffer.
-        kprintf("NVME: Identify buffer retained for safety.\n");
+        nvme_log("NVME: Identify buffer retained for safety.\n");
         return false;
     }
 
@@ -249,11 +249,11 @@ bool nvme_identify_namespace(nvme_controller_t *ctrl,
         const uint64_t utilisation =
             *(const uint64_t *)(data + NVME_IDENTIFY_NUSE_OFFSET);
 
-        kprintf("NVME: Namespace identification successful.\n");
-        kprintf("NVME: Namespace ID: %lu\n", (uint64_t)namespace_id);
-        kprintf("NVME: Namespace size: %lu blocks\n", size);
-        kprintf("NVME: Namespace capacity: %lu blocks\n", capacity);
-        kprintf("NVME: Namespace utilisation: %lu blocks\n", utilisation);
+        nvme_log("NVME: Namespace identification successful.\n");
+        nvme_log("NVME: Namespace ID: %lu\n", (uint64_t)namespace_id);
+        nvme_log("NVME: Namespace size: %lu blocks\n", size);
+        nvme_log("NVME: Namespace capacity: %lu blocks\n", capacity);
+        nvme_log("NVME: Namespace utilisation: %lu blocks\n", utilisation);
 
         // Determine the currently active logical block format.
         const uint8_t format =
@@ -262,7 +262,7 @@ bool nvme_identify_namespace(nvme_controller_t *ctrl,
 
         // NLBAF is a zero-based format count.
         if (format > data[NVME_IDENTIFY_NLBAF_OFFSET]) {
-            kprintf("NVME: Invalid LBA format.\n");
+            nvme_log("NVME: Invalid LBA format.\n");
             dma_free(&buffer);
             return false;
         }
@@ -272,32 +272,55 @@ bool nvme_identify_namespace(nvme_controller_t *ctrl,
             NVME_IDENTIFY_LBAF_OFFSET +
             (format * NVME_IDENTIFY_LBAF_SIZE);
 
+        // Retrieve the metadata size for the active LBA format.
+        const uint16_t metadata_size =
+            *(const uint16_t *)(data + format_offset +
+                                NVME_IDENTIFY_MS_OFFSET);
+
+        // Retrieve the active protection information type.
+        const uint8_t protection_type =
+            data[NVME_IDENTIFY_DPS_OFFSET] &
+            NVME_IDENTIFY_DPS_PI_MASK;
+
+        if (metadata_size != NVME_METADATA_NONE ||
+            protection_type != NVME_PROTECTION_NONE) {
+            nvme_log("NVME: Unsupported namespace metadata format.\n");
+            dma_free(&buffer);
+            return false;
+        }
+
+        nvme_log("NVME: Metadata size: %d bytes\n",
+            (int)metadata_size);
+
+        nvme_log("NVME: Protection type: %d\n",
+            (int)protection_type);
+
         // Read the logical block size exponent.
         const uint8_t lbads =
             data[format_offset + NVME_IDENTIFY_LBADS_OFFSET];
 
         if (lbads < NVME_IDENTIFY_LBADS_MIN || lbads >= 32) {
-            kprintf("NVME: Unsupported logical block size.\n");
+            nvme_log("NVME: Unsupported logical block size.\n");
             dma_free(&buffer);
             return false;
         }
 
         const uint32_t block_size = 1U << lbads;
 
-        kprintf("NVME: Active LBA format: %d\n", (int)format);
-        kprintf("NVME: Logical block size: %lu bytes\n",
+        nvme_log("NVME: Active LBA format: %d\n", (int)format);
+        nvme_log("NVME: Logical block size: %lu bytes\n",
             (uint64_t)block_size);
 
         // Calculate the total addressable storage in bytes.
         if (size > UINT64_MAX / block_size) {
-            kprintf("NVME: Namespace size overflow.\n");
+            nvme_log("NVME: Namespace size overflow.\n");
             dma_free(&buffer);
             return false;
         }
 
         const uint64_t size_bytes = size * block_size;
 
-        kprintf("NVME: Disk size: %lu bytes\n", size_bytes);
+        nvme_log("NVME: Disk size: %lu bytes\n", size_bytes);
 
         // Persist the namespace geometry for future I/O operations.
         ctrl->namespace.id = namespace_id;
@@ -345,14 +368,14 @@ bool nvme_set_number_of_queues(nvme_controller_t *ctrl)
 
     if (submission_queues < NVME_IO_QUEUE_PAIR_COUNT ||
         completion_queues < NVME_IO_QUEUE_PAIR_COUNT) {
-        kprintf("NVME: Insufficient I/O queues.\n");
+        nvme_log("NVME: Insufficient I/O queues.\n");
         return false;
     }
 
-    kprintf("NVME: Allocated I/O submission queues: %d\n",
+    nvme_log("NVME: Allocated I/O submission queues: %d\n",
         (int)submission_queues);
 
-    kprintf("NVME: Allocated I/O completion queues: %d\n",
+    nvme_log("NVME: Allocated I/O completion queues: %d\n",
         (int)completion_queues);
 
     return true;
@@ -386,7 +409,7 @@ bool nvme_create_io_completion_queue(nvme_controller_t *ctrl)
         return false;
     }
 
-    kprintf("NVME: I/O completion queue created.\n");
+    nvme_log("NVME: I/O completion queue created.\n");
 
     return true;
 }
@@ -421,7 +444,7 @@ bool nvme_create_io_submission_queue(nvme_controller_t *ctrl)
         return false;
     }
 
-    kprintf("NVME: I/O submission queue created.\n");
+    nvme_log("NVME: I/O submission queue created.\n");
 
     return true;
 }

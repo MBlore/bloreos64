@@ -21,22 +21,155 @@
 #include <nvme.h>
 #include <str.h>
 #include <dma.h>
+#include <mem.h>
+#include <block.h>
 
 #include "internal.h"
 
 static nvme_controller_t controller;
+static block_device_t block_device;
 
-void nvme_init()
+// Display the contents of a buffer in hexadecimal.
+#define NVME_HEX_BYTES_PER_LINE 16
+
+#define NVME_TEST_NAMESPACE_ID  2
+#define NVME_TEST_WRITE_LBA     1000
+#define NVME_TEST_BLOCK_SIZE    512
+#define NVME_TEST_WRITE_MESSAGE "Hello from BloreOS!"
+
+/*
+static void nvme_hex_dump(const uint8_t *data, size_t size)
 {
+    const char hex[] = "0123456789ABCDEF";
+
+    for (size_t i = 0; i < size; i++) {
+        const uint8_t value = data[i];
+
+        nvme_log("%c%c ",
+            hex[value >> 4],
+            hex[value & 0x0F]);
+
+        if ((i + 1) % NVME_HEX_BYTES_PER_LINE == 0) {
+            nvme_log("\n");
+        }
+    }
+
+    if (size % NVME_HEX_BYTES_PER_LINE != 0) {
+        nvme_log("\n");
+    }
+}
+
+// Test reading the first logical block from the namespace.
+static bool nvme_test_read(nvme_controller_t *ctrl)
+{
+    dma_buffer_t buffer = {0};
+
+    if (!dma_alloc(ctrl->namespace.block_size, &buffer)) {
+        nvme_log("NVME: Read buffer allocation failed.\n");
+        return false;
+    }
+
+    nvme_log("NVME: Reading first logical block...\n");
+
+    const bool success = nvme_read_block(ctrl, 0, &buffer);
+
+    if (ctrl->io_queue.failed) {
+        // The controller may still be accessing this buffer.
+        nvme_log("NVME: Read buffer retained for safety.\n");
+        return false;
+    }
+
+    if (success) {
+        nvme_log("NVME: Logical block read successful.\n");
+
+        nvme_log("NVME: LBA 0 contents:\n");
+
+        //nvme_hex_dump(buffer.virt_addr, ctrl->namespace.block_size);
+    }
+
+    dma_free(&buffer);
+
+    return success;
+}
+
+// Test writing a single logical block to the data disk.
+static bool nvme_test_write(nvme_controller_t *ctrl)
+{
+    // Ensure we are targeting our dedicated test disk.
+    if (!ctrl->namespace.valid ||
+        ctrl->namespace.id != NVME_TEST_NAMESPACE_ID ||
+        ctrl->namespace.block_size != NVME_TEST_BLOCK_SIZE) {
+        nvme_log("NVME: Incorrect test namespace.\n");
+        return false;
+    }
+
+    dma_buffer_t buffer = {0};
+
+    if (!dma_alloc(ctrl->namespace.block_size, &buffer)) {
+        nvme_log("NVME: Write buffer allocation failed.\n");
+        return false;
+    }
+
+    // Populate the DMA buffer with our test message.
+    memmove(buffer.virt_addr,
+        NVME_TEST_WRITE_MESSAGE,
+        sizeof(NVME_TEST_WRITE_MESSAGE));
+
+    nvme_log("NVME: Writing test logical block...\n");
+
+    const bool success = nvme_write_block(
+        ctrl,
+        NVME_TEST_WRITE_LBA,
+        &buffer
+    );
+
+    if (ctrl->io_queue.failed) {
+        // The controller may still be accessing this buffer.
+        nvme_log("NVME: Write buffer retained for safety.\n");
+        return false;
+    }
+
+    if (success) {
+        nvme_log("NVME: Logical block write successful.\n");
+    }
+
+    dma_free(&buffer);
+
+    return success;
+}
+*/
+
+static void nvme_reg_block(void)
+{
+    snprintf(block_device.name, sizeof(block_device.name), "nvme0n%d", (int)controller.namespace.id);
+
+    block_device.block_size = controller.namespace.block_size;
+    block_device.block_count = controller.namespace.block_count;
+    block_device.context = &controller;
+    block_device.read = nvme_block_read;
+    block_device.write = nvme_block_write;
+
+    if (!block_register(&block_device)) {
+        kprintf("NVME: Failed to register block device.\n");
+        return;
+    }
+
+    kprintf("NVME: Registered block device '%s'.\n", block_device.name);
+}
+
+void nvme_init(void)
+{
+    kprintf("NVME: Initializing...\n");
+
     struct pci_device *dev =
         pci_find_device(NVME_PCI_CLASS, NVME_PCI_SUBCLASS);
 
     if (dev == NULL || dev->prog_if != NVME_PCI_PROG_IF) {
-        kprintf("NVME: Controller not found.\n");
+        nvme_log("NVME: Controller not found.\n");
         return;
     }
 
-    kprintf("NVME: Controller found.\n");
+    nvme_log("NVME: Controller found.\n");
 
     // Enable MMIO access and device-initiated DMA.
     if (!nvme_enable_pci(dev)) {
@@ -63,7 +196,7 @@ void nvme_init()
     }
 
     if (controller.max_queue_entries < NVME_ADMIN_QUEUE_ENTRIES) {
-        kprintf("NVME: Insufficient queue capacity.\n");
+        nvme_log("NVME: Insufficient queue capacity.\n");
         return;
     }
 
@@ -73,12 +206,12 @@ void nvme_init()
         return;
     }
 
-    kprintf("NVME: Administration queues allocated.\n");
+    nvme_log("NVME: Administration queues allocated.\n");
 
-    kprintf("NVME: SQ physical address: 0x%x\n",
+    nvme_log("NVME: SQ physical address: 0x%x\n",
         controller.admin_queue.submission.phys_addr);
 
-    kprintf("NVME: CQ physical address: 0x%x\n",
+    nvme_log("NVME: CQ physical address: 0x%x\n",
         controller.admin_queue.completion.phys_addr);
 
     if (!nvme_configure_admin_queues(&controller)) {
@@ -108,7 +241,7 @@ void nvme_init()
     }
 
     // Identify the first namespace in our QEMU configuration.
-    if (!nvme_identify_namespace(&controller, 1)) {
+    if (!nvme_identify_namespace(&controller, 2)) {
         return;
     }
 
@@ -119,7 +252,7 @@ void nvme_init()
 
     // Validate the required I/O queue capacity.
     if (controller.max_queue_entries < NVME_IO_QUEUE_ENTRIES) {
-        kprintf("NVME: Insufficient I/O queue capacity.\n");
+        nvme_log("NVME: Insufficient I/O queue capacity.\n");
         return;
     }
 
@@ -130,12 +263,12 @@ void nvme_init()
         return;
     }
 
-    kprintf("NVME: I/O queues allocated.\n");
+    nvme_log("NVME: I/O queues allocated.\n");
 
-    kprintf("NVME: I/O SQ physical address: 0x%x\n",
+    nvme_log("NVME: I/O SQ physical address: 0x%x\n",
         controller.io_queue.submission.phys_addr);
 
-    kprintf("NVME: I/O CQ physical address: 0x%x\n",
+    nvme_log("NVME: I/O CQ physical address: 0x%x\n",
         controller.io_queue.completion.phys_addr);
 
     // Register the I/O completion queue.
@@ -148,5 +281,9 @@ void nvme_init()
         return;
     }
 
-    kprintf("NVME: I/O queues ready.\n");
+    nvme_log("NVME: I/O queues ready.\n");
+
+    nvme_reg_block();
+    
+    kprintf("NVME: Initialization complete.\n");
 }

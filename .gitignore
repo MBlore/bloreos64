@@ -8,3 +8,4 @@ ovmf/
 image.hdd
 image.iso
 /tests/bin/
+data.hdd

@@ -31,14 +31,14 @@ bool nvme_allocate_queue(nvme_queue_t *queue,
     // Allocate the submission queue.
     if (!dma_alloc(entry_count * sizeof(nvme_command_t),
                    &queue->submission)) {
-        kprintf("NVME: Submission queue allocation failed.\n");
+        nvme_log("NVME: Submission queue allocation failed.\n");
         return false;
     }
 
     // Allocate the completion queue.
     if (!dma_alloc(entry_count * sizeof(nvme_completion_t),
                    &queue->completion)) {
-        kprintf("NVME: Completion queue allocation failed.\n");
+        nvme_log("NVME: Completion queue allocation failed.\n");
 
         dma_free(&queue->submission);
         return false;
@@ -125,7 +125,7 @@ static bool nvme_wait_completion(nvme_queue_t *queue,
 
         if (hpet_get_uptime_ms() - start >=
             NVME_COMMAND_TIMEOUT_MS) {
-            kprintf("NVME: Command completion timed out.\n");
+            nvme_log("NVME: Command completion timed out.\n");
             return false;
         }
 
@@ -185,14 +185,14 @@ bool nvme_execute_command(
     // Verify that the completion belongs to our command.
     if (completion->command_id != command->command_id ||
         completion->sq_id != queue->queue_id) {
-        kprintf("NVME: Unexpected command completion.\n");
+        nvme_log("NVME: Unexpected command completion.\n");
         queue->failed = true;
         return false;
     }
 
     // Check whether the controller completed the command successfully.
     if (completion->status & NVME_COMPLETION_STATUS_MASK) {
-        kprintf("NVME: Command failed. Status: 0x%x\n",
+        nvme_log("NVME: Command failed. Status: 0x%x\n",
             (uint64_t)completion->status);
         return false;
     }

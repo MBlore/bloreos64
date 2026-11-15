@@ -139,23 +139,29 @@ clean:
 	rm -f $(IMAGE_NAME).iso $(IMAGE_NAME).hdd
 
 .PHONY: run
-run: $(IMAGE_NAME).hdd
+run: $(IMAGE_NAME).hdd data.hdd
 	qemu-system-x86_64 -M q35 -m 2G \
         -bios ovmf/OVMF.fd -boot d \
-        -drive file=$(IMAGE_NAME).hdd,if=none,id=mydrive,format=raw \
-        -device nvme,serial=1234,drive=mydrive,id=nvme0,num_queues=4 \
+        -device nvme,serial=1234,id=nvme0,max_ioqpairs=3 \
+        -drive file=$(IMAGE_NAME).hdd,if=none,id=bootdrive,format=raw \
+        -device nvme-ns,drive=bootdrive,bus=nvme0,nsid=1 \
+        -drive file=data.hdd,if=none,id=datadrive,format=raw \
+        -device nvme-ns,drive=datadrive,bus=nvme0,nsid=2 \
         -serial file:logs/$(shell date +'%Y%m%d_%H%M%S').txt
 
 .PHONY: run-iso
 run-iso: $(IMAGE_NAME).iso
-	qemu-system-x86_64 -M q35 -m 2G -smp cores=4,threads=1,sockets=1 -cdrom $(IMAGE_NAME).iso -boot d -serial file:logs/$(shell date +'%Y%m%d_%H%M%S').txt -d int -no-reboot
+	qemu-system-x86_64 -M q35 -m 2G \
+        -smp cores=4,threads=1,sockets=1 \
+        -cdrom $(IMAGE_NAME).iso -boot d \
+        -serial file:logs/$(shell date +'%Y%m%d_%H%M%S').txt -d int -no-reboot
 
 .PHONY: debug
 debug: $(IMAGE_NAME).hdd
 	qemu-system-x86_64 -M q35 -m 2G \
         -bios ovmf/OVMF.fd -boot d \
         -drive file=$(IMAGE_NAME).hdd,if=none,id=mydrive,format=raw \
-        -device nvme,serial=1234,drive=mydrive,id=nvme0,num_queues=4 \
+        -device nvme,serial=1234,drive=mydrive,id=nvme0,max_ioqpairs=3 \
         -serial file:logs/$(shell date +'%Y%m%d_%H%M%S').txt \
         -no-reboot -s -S
 
@@ -174,3 +180,8 @@ ovmf:
 .PHONY: test
 test:
 	$(MAKE) -C tests
+
+# Create the NVMe test data disk.
+.PHONY: data
+data:
+	./build-data.sh

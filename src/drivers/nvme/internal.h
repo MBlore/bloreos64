@@ -22,6 +22,15 @@
 #include <stdbool.h>
 #include <dma.h>
 
+#define NVME_DEBUG 0
+
+#define nvme_log(...)                  \
+    do {                               \
+        if (NVME_DEBUG) {              \
+            kprintf(__VA_ARGS__);      \
+        }                              \
+    } while (0)
+
 #define NVME_PCI_CLASS     0x01
 #define NVME_PCI_SUBCLASS  0x08
 #define NVME_PCI_PROG_IF   0x02
@@ -112,32 +121,44 @@
 #define NVME_IDENTIFY_NN_OFFSET  516
 
 // Identify Namespace data fields.
-#define NVME_IDENTIFY_NSZE_OFFSET 0
-#define NVME_IDENTIFY_NCAP_OFFSET 8
-#define NVME_IDENTIFY_NUSE_OFFSET 16
-#define NVME_IDENTIFY_NLBAF_OFFSET 25
-#define NVME_IDENTIFY_FLBAS_OFFSET 26
-#define NVME_IDENTIFY_FLBAS_MASK   0x0F
+#define NVME_IDENTIFY_NSZE_OFFSET   0
+#define NVME_IDENTIFY_NCAP_OFFSET   8
+#define NVME_IDENTIFY_NUSE_OFFSET   16
+#define NVME_IDENTIFY_NLBAF_OFFSET  25
+#define NVME_IDENTIFY_FLBAS_OFFSET  26
+#define NVME_IDENTIFY_FLBAS_MASK    0x0F
 
 #define NVME_IDENTIFY_LBAF_OFFSET  128
 #define NVME_IDENTIFY_LBAF_SIZE    4
 #define NVME_IDENTIFY_LBADS_OFFSET 2
 #define NVME_IDENTIFY_LBADS_MIN    9
 
+#define NVME_IDENTIFY_MS_OFFSET   0
+#define NVME_IDENTIFY_DPS_OFFSET  29
+#define NVME_IDENTIFY_DPS_PI_MASK 0x07
+
+#define NVME_METADATA_NONE        0
+#define NVME_PROTECTION_NONE      0
+
 #define NVME_ADMIN_SET_FEATURES 0x09
 
-#define NVME_IO_QUEUE_PAIR_COUNT 1
-#define NVME_IO_QUEUE_ENTRIES 64
-#define NVME_IO_QUEUE_ID      1
+#define NVME_IO_QUEUE_PAIR_COUNT    1
+#define NVME_IO_QUEUE_ENTRIES       64
+#define NVME_IO_QUEUE_ID            1
 
 #define NVME_ADMIN_CREATE_IO_CQ 0x05
 
 // Create I/O queue command fields.
-#define NVME_QUEUE_SIZE_SHIFT 16
-#define NVME_QUEUE_PHYS_CONTIGUOUS (1U << 0)
+#define NVME_QUEUE_SIZE_SHIFT       16
+#define NVME_QUEUE_PHYS_CONTIGUOUS  (1U << 0)
 
 #define NVME_ADMIN_CREATE_IO_SQ 0x01
 #define NVME_QUEUE_CQID_SHIFT   16
+
+// NVM I/O commands.
+#define NVME_NVM_READ           0x02
+#define NVME_NVM_WRITE          0x01
+#define NVME_SLBA_HIGH_SHIFT     32
 
 // Represents a single 64-byte NVMe submission queue entry.
 typedef struct
@@ -235,6 +256,13 @@ typedef struct
     nvme_namespace_t namespace;
 } nvme_controller_t;
 
+// Represents an independent namespace attached to a controller.
+typedef struct
+{
+    nvme_controller_t *controller;
+    nvme_namespace_t namespace;
+} nvme_device_t;
+
 struct pci_device;
 
 // Controller management.
@@ -268,5 +296,17 @@ bool nvme_identify_namespace(nvme_controller_t *ctrl,
 bool nvme_set_number_of_queues(nvme_controller_t *ctrl);
 bool nvme_create_io_completion_queue(nvme_controller_t *ctrl);
 bool nvme_create_io_submission_queue(nvme_controller_t *ctrl);
+
+// NVM I/O operations.
+bool nvme_read_block(nvme_controller_t *ctrl,
+                     uint64_t lba,
+                     dma_buffer_t *buffer);
+bool nvme_write_block(nvme_controller_t *ctrl,
+                      uint64_t lba,
+                      dma_buffer_t *buffer);
+
+// block_device interface implementation.
+bool nvme_block_read(void *context, uint64_t lba, uint32_t count, void *buffer);
+bool nvme_block_write(void *context, uint64_t lba, uint32_t count, const void *buffer);
 
 #endif

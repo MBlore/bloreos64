@@ -71,12 +71,12 @@ bool nvme_enable_pci(struct pci_device *dev)
     pci_command = pci_device_read(dev, PCI_REG1_OFFSET, 2);
 
     if ((pci_command & required_flags) != required_flags) {
-        kprintf("NVME: Failed to enable PCI command flags.\n");
+        nvme_log("NVME: Failed to enable PCI command flags.\n");
         return false;
     }
 
-    kprintf("NVME: PCI memory space enabled.\n");
-    kprintf("NVME: PCI bus mastering enabled.\n");
+    nvme_log("NVME: PCI memory space enabled.\n");
+    nvme_log("NVME: PCI bus mastering enabled.\n");
 
     return true;
 }
@@ -88,12 +88,12 @@ void *nvme_map_registers(struct pci_device *dev)
         pci_device_read(dev, PCI_REG4_OFFSET, 4);
 
     if (bar0 & PCI_BAR_IO_SPACE) {
-        kprintf("NVME: Invalid BAR0 address space.\n");
+        nvme_log("NVME: Invalid BAR0 address space.\n");
         return NULL;
     }
 
     if ((bar0 & PCI_BAR_TYPE_MASK) != PCI_BAR_TYPE_64BIT) {
-        kprintf("NVME: Expected a 64-bit BAR.\n");
+        nvme_log("NVME: Expected a 64-bit BAR.\n");
         return NULL;
     }
 
@@ -105,7 +105,7 @@ void *nvme_map_registers(struct pci_device *dev)
         ((uint64_t)bar1 << 32) |
         (bar0 & PCI_BAR_ADDRESS_MASK);
 
-    kprintf("NVME: Physical address: 0x%x\n",
+    nvme_log("NVME: Physical address: 0x%x\n",
         physical_address);
 
     // Map the controller registers and doorbell registers.
@@ -115,12 +115,12 @@ void *nvme_map_registers(struct pci_device *dev)
     );
 
     if (registers == NULL) {
-        kprintf("NVME: MMIO mapping failed.\n");
+        nvme_log("NVME: MMIO mapping failed.\n");
         return NULL;
     }
 
-    kprintf("NVME: MMIO mapping successful.\n");
-    kprintf("NVME: Virtual address: 0x%x\n",
+    nvme_log("NVME: MMIO mapping successful.\n");
+    nvme_log("NVME: Virtual address: 0x%x\n",
         (uint64_t)registers);
 
     return registers;
@@ -144,7 +144,7 @@ void nvme_read_version(void *registers)
     const uint32_t tertiary =
         version & NVME_VS_COMPONENT_MASK;
 
-    kprintf("NVME: Version %d.%d.%d\n",
+    nvme_log("NVME: Version %d.%d.%d\n",
         (int)major, (int)minor, (int)tertiary);
 }
 
@@ -156,13 +156,13 @@ bool nvme_read_capabilities(nvme_controller_t *ctrl)
             (uint64_t)ctrl->registers + NVME_REG_CAP
         );
 
-    kprintf("NVME: Capabilities: 0x%x\n", capabilities);
+    nvme_log("NVME: Capabilities: 0x%x\n", capabilities);
 
     // MQES is a zero-based value.
     ctrl->max_queue_entries =
         (capabilities & NVME_CAP_MQES_MASK) + 1;
 
-    kprintf("NVME: Maximum queue entries: %d\n",
+    nvme_log("NVME: Maximum queue entries: %d\n",
         (int)ctrl->max_queue_entries);
 
     // Controller readiness timeout in milliseconds.
@@ -170,7 +170,7 @@ bool nvme_read_capabilities(nvme_controller_t *ctrl)
         ((capabilities >> NVME_CAP_TO_SHIFT) &
         NVME_CAP_TO_MASK) * NVME_CAP_TO_UNIT_MS;
 
-    kprintf("NVME: Ready timeout: %d ms\n",
+    nvme_log("NVME: Ready timeout: %d ms\n",
         (int)ctrl->timeout_ms);
 
     // Calculate the spacing between doorbell registers.
@@ -181,7 +181,7 @@ bool nvme_read_capabilities(nvme_controller_t *ctrl)
     ctrl->doorbell_stride =
         NVME_DOORBELL_BASE_SIZE << dstrd;
 
-    kprintf("NVME: Doorbell stride: %d bytes\n",
+    nvme_log("NVME: Doorbell stride: %d bytes\n",
         (int)ctrl->doorbell_stride);
 
     // Decode the supported memory page size range.
@@ -199,22 +199,22 @@ bool nvme_read_capabilities(nvme_controller_t *ctrl)
     const uint32_t max_page_size =
         1U << (NVME_MPS_BASE_SHIFT + mpsmax);
 
-    kprintf("NVME: Minimum page size: %d bytes\n",
+    nvme_log("NVME: Minimum page size: %d bytes\n",
         (int)min_page_size);
 
-    kprintf("NVME: Maximum page size: %d bytes\n",
+    nvme_log("NVME: Maximum page size: %d bytes\n",
         (int)max_page_size);
 
     // Validate the kernel's memory page size.
     if (PAGE_SIZE < min_page_size ||
         PAGE_SIZE > max_page_size) {
-        kprintf("NVME: Unsupported memory page size.\n");
+        nvme_log("NVME: Unsupported memory page size.\n");
         return false;
     }
 
     // Validate support for the NVM Command Set.
     if (!(capabilities & NVME_CAP_CSS_NVM)) {
-        kprintf("NVME: NVM Command Set not supported.\n");
+        nvme_log("NVME: NVM Command Set not supported.\n");
         return false;
     }
 
@@ -234,19 +234,19 @@ bool nvme_reset_controller(nvme_controller_t *ctrl)
             (uint64_t)ctrl->registers + NVME_REG_CSTS
         );
 
-    kprintf("NVME: Controller configuration: 0x%x\n",
+    nvme_log("NVME: Controller configuration: 0x%x\n",
         (uint64_t)cc);
 
-    kprintf("NVME: Controller status: 0x%x\n",
+    nvme_log("NVME: Controller status: 0x%x\n",
         (uint64_t)csts);
 
-    kprintf("NVME: Controller enabled: %s\n",
+    nvme_log("NVME: Controller enabled: %s\n",
         (cc & NVME_CC_EN) ? "Yes" : "No");
 
-    kprintf("NVME: Controller ready: %s\n",
+    nvme_log("NVME: Controller ready: %s\n",
         (csts & NVME_CSTS_RDY) ? "Yes" : "No");
 
-    kprintf("NVME: Controller fatal error: %s\n",
+    nvme_log("NVME: Controller fatal error: %s\n",
         (csts & NVME_CSTS_CFS) ? "Yes" : "No");
 
     // Disable the controller.
@@ -254,16 +254,16 @@ bool nvme_reset_controller(nvme_controller_t *ctrl)
         (uint64_t)ctrl->registers + NVME_REG_CC
     ) = cc & ~NVME_CC_EN;
 
-    kprintf("NVME: Waiting for controller reset...\n");
+    nvme_log("NVME: Waiting for controller reset...\n");
 
     // Wait until the controller is no longer ready.
     if (!nvme_wait_ready(
             ctrl->registers, false, ctrl->timeout_ms)) {
-        kprintf("NVME: Controller reset timed out.\n");
+        nvme_log("NVME: Controller reset timed out.\n");
         return false;
     }
 
-    kprintf("NVME: Controller reset successful.\n");
+    nvme_log("NVME: Controller reset successful.\n");
 
     return true;
 }
@@ -314,15 +314,15 @@ bool nvme_configure_admin_queues(nvme_controller_t *ctrl)
     if (actual_aqa != aqa ||
         actual_asq != ctrl->admin_queue.submission.phys_addr ||
         actual_acq != ctrl->admin_queue.completion.phys_addr) {
-        kprintf("NVME: Administration queue verification failed.\n");
+        nvme_log("NVME: Administration queue verification failed.\n");
         return false;
     }
 
-    kprintf("NVME: AQA: 0x%x\n", (uint64_t)actual_aqa);
-    kprintf("NVME: ASQ: 0x%x\n", actual_asq);
-    kprintf("NVME: ACQ: 0x%x\n", actual_acq);
+    nvme_log("NVME: AQA: 0x%x\n", (uint64_t)actual_aqa);
+    nvme_log("NVME: ASQ: 0x%x\n", actual_asq);
+    nvme_log("NVME: ACQ: 0x%x\n", actual_acq);
 
-    kprintf("NVME: Administration queues configured.\n");
+    nvme_log("NVME: Administration queues configured.\n");
 
     return true;
 }
@@ -344,11 +344,11 @@ bool nvme_enable_controller(nvme_controller_t *ctrl)
         (uint64_t)ctrl->registers + NVME_REG_CC
     ) = cc;
 
-    kprintf("NVME: Waiting for controller readiness...\n");
+    nvme_log("NVME: Waiting for controller readiness...\n");
 
     if (!nvme_wait_ready(
             ctrl->registers, true, ctrl->timeout_ms)) {
-        kprintf("NVME: Controller enable timed out.\n");
+        nvme_log("NVME: Controller enable timed out.\n");
         return false;
     }
 
@@ -359,11 +359,11 @@ bool nvme_enable_controller(nvme_controller_t *ctrl)
         );
 
     if (csts & NVME_CSTS_CFS) {
-        kprintf("NVME: Controller fatal error.\n");
+        nvme_log("NVME: Controller fatal error.\n");
         return false;
     }
 
-    kprintf("NVME: Controller enabled successfully.\n");
+    nvme_log("NVME: Controller enabled successfully.\n");
 
     return true;
 }
@@ -375,5 +375,5 @@ void nvme_mask_interrupts(nvme_controller_t *ctrl)
         (uint64_t)ctrl->registers + NVME_REG_INTMS
     ) = NVME_INTERRUPT_MASK_ALL;
 
-    kprintf("NVME: Controller interrupts masked.\n");
+    nvme_log("NVME: Controller interrupts masked.\n");
 }
