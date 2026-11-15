@@ -93,11 +93,22 @@ void nvme_init()
 
     nvme_mask_interrupts(&controller);
 
-    kprintf("NVME: Executing first administration command...\n");
-
     if (!nvme_get_number_of_queues(&controller)) {
         return;
     }
 
-    kprintf("NVME: Administration command successful.\n");
+    // Retrieve controller identification data.
+    if (!nvme_identify_controller(&controller)) {
+        return;
+    }
+
+    // Discover the active storage namespaces.
+    if (!nvme_identify_active_namespaces(&controller)) {
+        return;
+    }
+
+    // Identify the first namespace in our QEMU configuration.
+    if (!nvme_identify_namespace(&controller, 1)) {
+        return;
+    }
 }

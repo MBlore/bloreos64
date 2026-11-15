@@ -92,6 +92,38 @@
 #define NVME_FEATURE_NSQ_MASK    0xFFFFU
 #define NVME_FEATURE_NCQ_SHIFT   16
 
+#define NVME_ADMIN_IDENTIFY           0x06
+#define NVME_IDENTIFY_DATA_SIZE       4096
+
+#define NVME_IDENTIFY_CNS_NAMESPACE   0x00
+#define NVME_IDENTIFY_CNS_CONTROLLER  0x01
+#define NVME_IDENTIFY_CNS_ACTIVE_LIST 0x02
+
+// Identify Controller data fields.
+#define NVME_IDENTIFY_SN_OFFSET  4
+#define NVME_IDENTIFY_SN_LENGTH  20
+
+#define NVME_IDENTIFY_MN_OFFSET  24
+#define NVME_IDENTIFY_MN_LENGTH  40
+
+#define NVME_IDENTIFY_FR_OFFSET  64
+#define NVME_IDENTIFY_FR_LENGTH  8
+
+#define NVME_IDENTIFY_NN_OFFSET  516
+
+// Identify Namespace data fields.
+#define NVME_IDENTIFY_NSZE_OFFSET 0
+#define NVME_IDENTIFY_NCAP_OFFSET 8
+#define NVME_IDENTIFY_NUSE_OFFSET 16
+#define NVME_IDENTIFY_NLBAF_OFFSET 25
+#define NVME_IDENTIFY_FLBAS_OFFSET 26
+#define NVME_IDENTIFY_FLBAS_MASK   0x0F
+
+#define NVME_IDENTIFY_LBAF_OFFSET  128
+#define NVME_IDENTIFY_LBAF_SIZE    4
+#define NVME_IDENTIFY_LBADS_OFFSET 2
+#define NVME_IDENTIFY_LBADS_MIN    9
+
 // Represents a single 64-byte NVMe submission queue entry.
 typedef struct
 {
@@ -201,5 +233,9 @@ bool nvme_execute_command(
 
 // Administration commands.
 bool nvme_get_number_of_queues(nvme_controller_t *ctrl);
+bool nvme_identify_controller(nvme_controller_t *ctrl);
+bool nvme_identify_active_namespaces(nvme_controller_t *ctrl);
+bool nvme_identify_namespace(nvme_controller_t *ctrl,
+                             uint32_t namespace_id);
 
 #endif
