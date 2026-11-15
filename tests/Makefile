@@ -5,7 +5,18 @@ UNITY_SRC := unity/src/unity.c
 INCLUDES := -Iunity/src -I../src/include
 
 # Automatically discover all unit test suites.
-TEST_SRC := $(wildcard test_*.c)
+# TEST_SRC := $(wildcard test_*.c)
+
+# Execute unit test suites in this order.
+TEST_SRC := \
+    test_bitmap.c \
+    test_mem.c \
+    test_vm_translate.c \
+    test_vm_map.c \
+    test_vm_unmap.c \
+    test_vm_pat.c \
+    test_vm_mmio.c
+
 TEST_BIN := $(patsubst %.c,bin/%,$(TEST_SRC))
 
 # Build and execute all unit test suites.
@@ -32,7 +43,7 @@ VM_SRC := ../src/vm.c
 VM_MOCKS := mocks/mock_str.c
 VM_HELPERS := vm_test_helpers.c
 
-bin/test_vm_translate bin/test_vm_map bin/test_vm_unmap: bin/%: %.c $(UNITY_SRC) $(VM_SRC) $(VM_MOCKS) $(VM_HELPERS) vm_test_helpers.h mocks/cpu.h
+bin/test_vm_mmio bin/test_vm_pat bin/test_vm_translate bin/test_vm_map bin/test_vm_unmap: bin/%: %.c $(UNITY_SRC) $(VM_SRC) $(VM_MOCKS) $(VM_HELPERS) vm_test_helpers.h mocks/cpu.h
 	mkdir -p bin
 	$(HOST_CC) $(HOST_CFLAGS) -Imocks $(INCLUDES) \
 		-ffreestanding \

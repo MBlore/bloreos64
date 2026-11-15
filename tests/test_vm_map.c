@@ -619,6 +619,42 @@ void test_vm_map_tlb_invalidation(void)
     );
 }
 
+void test_vm_map_cache_flags(void)
+{
+    vm_init();
+
+    const uint64_t virtual_address = PAGE_SIZE;
+    const uint64_t physical_address = 32 * PAGE_SIZE;
+
+    const uint64_t cache_flags =
+        PAGE_PAT | PAGE_PCD | PAGE_PWT;
+
+    // Create a mapping with all cache selection bits set.
+    TEST_ASSERT_TRUE(vm_map_page(
+        virtual_address,
+        physical_address,
+        PAGE_RW | cache_flags
+    ));
+
+    // Locate the newly allocated paging structures.
+    uint64_t *new_pdpt = page_tables[TEST_RESERVED_PAGE_COUNT];
+    uint64_t *new_pd = page_tables[TEST_RESERVED_PAGE_COUNT + 1];
+    uint64_t *new_pt = page_tables[TEST_RESERVED_PAGE_COUNT + 2];
+
+    // Parent entries must not inherit the cache flags.
+    TEST_ASSERT_EQUAL_HEX64(0, pml4[0] & cache_flags);
+    TEST_ASSERT_EQUAL_HEX64(0, new_pdpt[0] & cache_flags);
+    TEST_ASSERT_EQUAL_HEX64(0, new_pd[0] & cache_flags);
+
+    // Only the leaf entry should contain the cache flags.
+    TEST_ASSERT_EQUAL_HEX64(
+        physical_address | PAGE_RW | TEST_PAGE_PRESENT | cache_flags,
+        new_pt[1]
+    );
+
+    assert_translation(virtual_address, physical_address);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -646,6 +682,7 @@ int main(void)
     RUN_TEST(test_vm_map_5level_missing_tables);
     RUN_TEST(test_vm_map_5level_allocation_rollback);
     RUN_TEST(test_vm_map_tlb_invalidation);
+    RUN_TEST(test_vm_map_cache_flags);
 
     return UNITY_END();
 }

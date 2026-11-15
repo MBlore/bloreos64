@@ -230,7 +230,7 @@ int vsnprintf(char buffer[], size_t size, const char format[], va_list args)
                 ++i; // Move past the 2nd char format token
                 int64_t value = va_arg(args, int64_t);
                 bufferIndex += ltoa(value, buffer + bufferIndex, 10);
-            } 
+            }
         }
         else {
             // Check if there is space in the buffer

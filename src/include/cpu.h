@@ -34,6 +34,15 @@
 #include <str.h>
 #include <stdbool.h>
 
+// Model-Specific Register identifiers.
+#define IA32_PAT 0x277
+
+// CPUID leaf for processor feature information.
+#define CPUID_FEATURES 0x01
+
+// PAT support flag in the CPUID feature EDX register.
+#define CPUID_EDX_PAT (1U << 16)
+
 extern uint32_t bsp_lapic_id;      // Bootstrap processor APIC ID.
 extern uint64_t cpu_count;
 

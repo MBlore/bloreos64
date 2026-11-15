@@ -25,12 +25,19 @@
 #include <math.h>
 #include <mem.h>
 
+#define PAT_ENTRY_COUNT 8
+#define PAT_ENTRY_BITS  8
+#define PAT_ENTRY_MASK  0xFFULL
+
+// Bits of the PAT selection index.
+#define PAT_INDEX_PWT (1U << 0)
+#define PAT_INDEX_PCD (1U << 1)
+#define PAT_INDEX_PAT (1U << 2)
+
 #define PAGE_PRESENT    0x1
-#define PAGE_RW         0x2
-#define PAGE_USER       0x4
 #define PAGE_PS (1ULL << 7)
 
-#define PAGE_MAP_ALLOWED_FLAGS (PAGE_RW | PAGE_USER)
+#define PAGE_MAP_ALLOWED_FLAGS (PAGE_RW | PAGE_USER | PAGE_PWT | PAGE_PCD | PAGE_PAT)
 
 #define PAGE_SIZE_2MB (2ULL * 1024 * 1024)
 #define PAGE_SIZE_1GB (1ULL * 1024 * 1024 * 1024)
@@ -49,6 +56,14 @@
 
 // Converts a physical address to the virtual direct memory map address.
 #define PHYS_TO_VIRT(addr) ((void*)((uint64_t)(addr) + vmm_higher_half_offset))
+
+// Virtual address range reserved for MMIO mappings.
+#define VM_MMIO_START 0xFFFFC00000000000ULL
+#define VM_MMIO_END   0xFFFFC10000000000ULL
+
+// Next available virtual address for MMIO mappings.
+static uint64_t mmio_next_address = VM_MMIO_START;
+static bool mmio_region_available = false;
 
 uint32_t maxphyaddr;
 uint32_t maxlinaddr;
@@ -501,9 +516,182 @@ bool vm_unmap_page(uint64_t virt_addr)
     return true;
 }
 
+bool vm_get_memory_type_flags(vm_memory_type_t type,
+                              uint64_t *flags)
+{
+     if (flags == NULL)
+        return false;
+
+    // Verify that the processor supports PAT before reading its MSR.
+    uint32_t eax, edx;
+    cpuid(CPUID_FEATURES, &eax, &edx);
+
+    if (!(edx & CPUID_EDX_PAT))
+        return false;
+
+    const uint64_t pat = read_msr(IA32_PAT);
+
+    for (uint32_t i = 0; i < PAT_ENTRY_COUNT; i++) {
+        // Extract the memory type from the current PAT entry.
+        uint64_t entry = (pat >> (i * PAT_ENTRY_BITS)) & PAT_ENTRY_MASK;
+
+        if (entry != (uint64_t)type)
+            continue;
+
+        // Convert the PAT index into page table entry flags.
+        *flags = 0;
+
+        if (i & PAT_INDEX_PWT)
+            *flags |= PAGE_PWT;
+
+        if (i & PAT_INDEX_PCD)
+            *flags |= PAGE_PCD;
+
+        if (i & PAT_INDEX_PAT)
+            *flags |= PAGE_PAT;
+
+        return true;
+    }
+
+    return false;
+}
+
+static bool is_mmio_region_available(void)
+{
+    const uint64_t address_mask =
+        ((1ULL << maxphyaddr) - 1) & ~(PAGE_SIZE - 1ULL);
+
+    uint64_t pml4addr = get_cr3() & address_mask;
+
+    // Locate the PML4 when using five-level paging.
+    if (get_cr4() & CR4_LA57)
+    {
+        uint64_t *pml5 = PHYS_TO_VIRT(pml4addr);
+        uint64_t pml5e = pml5[PML5_INDEX(VM_MMIO_START)];
+
+        // An absent parent means the entire region is available.
+        if (!(pml5e & PAGE_PRESENT))
+            return true;
+
+        pml4addr = pml5e & address_mask;
+    }
+
+    uint64_t *pml4 = PHYS_TO_VIRT(pml4addr);
+
+    const size_t first = PML4_INDEX(VM_MMIO_START);
+    const size_t last = PML4_INDEX(VM_MMIO_END - 1);
+
+    // Ensure all PML4 entries covering our MMIO region are absent.
+    for (size_t i = first; i <= last; i++)
+    {
+        if (pml4[i] & PAGE_PRESENT)
+            return false;
+    }
+
+    return true;
+}
+
+void *vm_map_mmio(uint64_t phys_addr, size_t size)
+{
+    // Reject mappings if the MMIO region could not be reserved.
+    if (!mmio_region_available)
+        return NULL;
+
+    // Reject empty MMIO regions.
+    if (size == 0)
+        return NULL;
+
+    // Determine the highest supported physical address.
+    const uint64_t max_physical_address = (1ULL << maxphyaddr) - 1;
+
+    // Reject physical addresses outside the supported range.
+    if (phys_addr > max_physical_address)
+        return NULL;
+
+    // Ensure the entire requested region fits without overflow.
+    if ((size - 1) > (max_physical_address - phys_addr))
+        return NULL;
+
+    // We have to account for some devices spanning over multiple pages.
+    // Align the physical address down to a page boundary.
+    const uint64_t alignment_mask = PAGE_SIZE - 1ULL;
+    const uint64_t aligned_phys_addr = phys_addr & ~alignment_mask;
+
+    // Calculate the offset within the first physical page.
+    const uint64_t offset = phys_addr & alignment_mask;
+
+    // Include the offset when calculating the required pages.
+    const uint64_t total_size = offset + size;
+    const uint64_t page_count = (total_size + alignment_mask) / PAGE_SIZE;
+
+    // Calculate the required virtual address space.
+    const uint64_t mapping_size = page_count * PAGE_SIZE;
+
+    // Reject mappings that would exceed the MMIO region.
+    if (mapping_size > (VM_MMIO_END - mmio_next_address))
+        return NULL;
+
+    // Device registers require uncacheable memory.
+    uint64_t cache_flags;
+    if (!vm_get_memory_type_flags(VM_MEMORY_UC, &cache_flags))
+        return NULL;
+
+    // Device registers must also be writable.
+    const uint64_t mapping_flags = PAGE_RW | cache_flags;
+
+    // Check every physical page for an existing HHDM mapping (aliases).
+    for (uint64_t i = 0; i < page_count; i++)
+    {
+        const uint64_t phys =
+            aligned_phys_addr + (i * PAGE_SIZE);
+
+        // Prevent overflow when calculating the HHDM address.
+        if (phys > UINT64_MAX - vmm_higher_half_offset)
+            return NULL;
+
+        const uint64_t hhdm_address =
+            vmm_higher_half_offset + phys;
+
+        uint64_t existing_phys_addr;
+
+        // Reject existing direct mappings to avoid cache conflicts.
+        if (vm_translate(hhdm_address, &existing_phys_addr))
+            return NULL;
+    }
+
+    // Remember the starting virtual address of this mapping.
+    const uint64_t virtual_base = mmio_next_address;
+
+    // Map each physical page into the MMIO region.
+    for (uint64_t i = 0; i < page_count; i++)
+    {
+        const uint64_t virt = virtual_base + (i * PAGE_SIZE);
+        const uint64_t phys = aligned_phys_addr + (i * PAGE_SIZE);
+
+        if (!vm_map_page(virt, phys, mapping_flags))
+        {
+            // Roll back any pages successfully mapped.
+            for (uint64_t j = 0; j < i; j++)
+                vm_unmap_page(virtual_base + (j * PAGE_SIZE));
+
+            return NULL;
+        }
+    }
+
+    // Advance the allocation cursor after a successful mapping.
+    mmio_next_address += mapping_size;
+
+    // Preserve the offset within the original physical page.
+    // So this virtual address points to the very start of the physical
+    // device memory within the page.
+    return (void *)(virtual_base + offset);
+}
+
 void vm_init()
 {
     kprintf("Initializing virtual memory...\n");
+
+    mmio_next_address = VM_MMIO_START;
     
     if (is_paging_enabled()) {
         kprintf("Paging enabled.\n");
@@ -532,4 +720,12 @@ void vm_init()
     maxlinaddr = val >> 8 & 0xFF;
     kprintf("MAXPHYADDR: %d bits\n", maxphyaddr);
     kprintf("MAXLINADDR: %d bits\n", maxlinaddr);
+
+    // Determine whether the reserved MMIO region is available.
+    mmio_region_available = is_mmio_region_available();
+
+    if (mmio_region_available)
+        kprintf("MMIO: Virtual address region available.\n");
+    else
+        kprintf("MMIO: Virtual address region unavailable.\n");
 }

@@ -8,6 +8,9 @@ uint64_t mock_cr3;
 uint64_t mock_cr4;
 uint64_t mock_address_widths;
 int mock_paging_enabled;
+uint64_t mock_pat;
+uint32_t mock_cpuid_edx;
+uint32_t mock_read_msr_count;
 
 size_t mock_invlpg_count;
 uint64_t mock_invlpg_address;
@@ -24,6 +27,14 @@ static size_t mock_allocation_cursor;
 
 void setUp(void)
 {
+    mock_read_msr_count = 0;
+    
+    // Simulate a CPU with PAT support by default.
+    mock_cpuid_edx = CPUID_EDX_PAT;
+
+    // Reset PAT to its architectural default configuration.
+    mock_pat = 0x0007040600070406ULL;
+    
     // Mark every entry in every page table as not present.
     for (size_t level = 0; level < TEST_PAGE_TABLE_COUNT; level++) {
         for (size_t i = 0; i < PAGE_TABLE_ENTRIES; i++) {

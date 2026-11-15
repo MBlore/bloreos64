@@ -1,0 +1,9 @@
+In vm.c, this handles all virtual memory paging.
+
+First came the walking of the paging tables from CR3.
+
+Then came mapping addresses, so creation of page tables and auto-create tables if they dont exist.
+
+Then we introduced the PAT config to configure page table entries flags to assist with MMIO.
+
+Then MMIO was implemented.

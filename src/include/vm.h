@@ -20,6 +20,33 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+
+// Page mapping permission flags.
+#define PAGE_RW   (1ULL << 1)
+#define PAGE_USER (1ULL << 2)
+
+// Page memory type selection flags.
+// These three make up the selection index in the PAT from a PTE.
+#define PAGE_PWT (1ULL << 3)
+#define PAGE_PCD (1ULL << 4)
+#define PAGE_PAT (1ULL << 7)
+
+// Architectural PAT memory type encodings.
+typedef enum {
+    VM_MEMORY_UC       = 0x00,
+    VM_MEMORY_WC       = 0x01,
+    VM_MEMORY_WT       = 0x04,
+    VM_MEMORY_WP       = 0x05,
+    VM_MEMORY_WB       = 0x06,
+    VM_MEMORY_UC_MINUS = 0x07
+} vm_memory_type_t;
+
+// Obtain the page mapping flags for a requested PAT memory type.
+// Returns false if the memory type is unavailable.
+// On failure, the output flags remain unchanged.
+bool vm_get_memory_type_flags(vm_memory_type_t type,
+                              uint64_t *flags);
 
 void vm_init();
 
@@ -39,5 +66,9 @@ bool vm_map_page(uint64_t virt_addr,
 // The mapped physical page is not released.
 // Returns false if the mapping cannot be removed.
 bool vm_unmap_page(uint64_t virt_addr);
+
+// Map a physical MMIO region into kernel virtual address space.
+// Returns a virtual address on success, or NULL on failure.
+void *vm_map_mmio(uint64_t phys_addr, size_t size);
 
 #endif

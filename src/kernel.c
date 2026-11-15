@@ -97,6 +97,31 @@ void kernel_main(void)
 
     vm_init();
 
+    // ---------- PAT support check.
+    
+    // Inspect the processor's Page Attribute Table if supported.
+    uint32_t pat_eax, pat_edx;
+
+    cpuid(1, &pat_eax, &pat_edx);
+
+    const uint32_t pat_supported_flag = 1U << 16;
+
+    if (pat_edx & pat_supported_flag) {
+        const uint64_t pat = read_msr(IA32_PAT);
+
+        kprintf("IA32_PAT: 0x%x\n", pat);
+    } else {
+        kprintf("IA32_PAT: Not supported.\n");
+    }
+
+    uint64_t uc_flags;
+
+    if (vm_get_memory_type_flags(VM_MEMORY_UC, &uc_flags)) {
+        kprintf("PAT TEST: UC flags: 0x%x\n", uc_flags);
+    } else {
+        kprintf("PAT TEST: UC unavailable.\n");
+    }
+
     // ---------- VMEM Mapping Testing
 
     // Temporary VMM hardware test.
@@ -135,7 +160,7 @@ void kernel_main(void)
         (uint64_t)test_page - vmm_higher_half_offset;
 
     // Request a writable mapping.
-    const uint64_t test_mapping_flags = 1ULL << 1;
+    const uint64_t test_mapping_flags = PAGE_RW;
 
     // Map the physical page to our new virtual address.
     if (!vm_map_page(test_virtual_address,
