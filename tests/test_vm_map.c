@@ -129,9 +129,9 @@ void test_vm_map_inside_2mb_page(void)
 {
     vm_init();
 
-    const uint64_t virtual_address = TEST_LARGE_PAGE_SIZE;
+    const uint64_t virtual_address = TEST_PAGE_SIZE_2MB;
     const uint64_t physical_address = 8 * PAGE_SIZE;
-    const uint64_t large_page_base = 4 * TEST_LARGE_PAGE_SIZE;
+    const uint64_t large_page_base = 4 * TEST_PAGE_SIZE_2MB;
 
     // Construct an existing 2 MiB page mapping.
     pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
@@ -165,9 +165,9 @@ void test_vm_map_inside_1gb_page(void)
 {
     vm_init();
 
-    const uint64_t virtual_address = TEST_HUGE_PAGE_SIZE;
+    const uint64_t virtual_address = TEST_PAGE_SIZE_1GB;
     const uint64_t physical_address = 8 * PAGE_SIZE;
-    const uint64_t huge_page_base = 4 * TEST_HUGE_PAGE_SIZE;
+    const uint64_t huge_page_base = 4 * TEST_PAGE_SIZE_1GB;
 
     // Construct an existing 1 GiB page mapping.
     pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;

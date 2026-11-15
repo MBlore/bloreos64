@@ -22,8 +22,8 @@
 #define TEST_PAGE_SIZE_FLAG (1ULL << 7)
 #define TEST_LARGE_PAGE_PAT (1ULL << 12)
 
-#define TEST_LARGE_PAGE_SIZE (2ULL * 1024 * 1024)
-#define TEST_HUGE_PAGE_SIZE  (1ULL * 1024 * 1024 * 1024)
+#define TEST_PAGE_SIZE_2MB (2ULL * 1024 * 1024)
+#define TEST_PAGE_SIZE_1GB  (1ULL * 1024 * 1024 * 1024)
 
 // Pages reserved for existing paging structures.
 #define TEST_RESERVED_PAGE_COUNT 5

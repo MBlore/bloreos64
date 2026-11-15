@@ -166,7 +166,7 @@ void test_vm_translate_2mb_page(void)
 {
     vm_init();
 
-    const uint64_t virtual_address = TEST_LARGE_PAGE_SIZE;
+    const uint64_t virtual_address = TEST_PAGE_SIZE_2MB;
     const uint64_t physical_address = 0;
 
     // Link the PML4 and PDPT tables.
@@ -187,7 +187,7 @@ void test_vm_translate_1gb_page(void)
 {
     vm_init();
 
-    const uint64_t virtual_address = TEST_HUGE_PAGE_SIZE;
+    const uint64_t virtual_address = TEST_PAGE_SIZE_1GB;
     const uint64_t physical_address = 0;
     const uint64_t offset = 0x12345678;
 
@@ -206,8 +206,8 @@ void test_vm_translate_2mb_nonzero_base(void)
 {
     vm_init();
 
-    const uint64_t virtual_address = TEST_LARGE_PAGE_SIZE;
-    const uint64_t physical_address = 4 * TEST_LARGE_PAGE_SIZE;
+    const uint64_t virtual_address = TEST_PAGE_SIZE_2MB;
+    const uint64_t physical_address = 4 * TEST_PAGE_SIZE_2MB;
     const uint64_t offset = 0x123456;
 
     pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
@@ -225,8 +225,8 @@ void test_vm_translate_1gb_nonzero_base(void)
 {
     vm_init();
 
-    const uint64_t virtual_address = TEST_HUGE_PAGE_SIZE;
-    const uint64_t physical_address = 4 * TEST_HUGE_PAGE_SIZE;
+    const uint64_t virtual_address = TEST_PAGE_SIZE_1GB;
+    const uint64_t physical_address = 4 * TEST_PAGE_SIZE_1GB;
     const uint64_t offset = 0x12345678;
 
     pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
@@ -361,8 +361,8 @@ void test_vm_translate_5level_2mb_page(void)
 {
     setup_5level_paging();
 
-    const uint64_t virtual_address = TEST_LARGE_PAGE_SIZE;
-    const uint64_t physical_address = 4 * TEST_LARGE_PAGE_SIZE;
+    const uint64_t virtual_address = TEST_PAGE_SIZE_2MB;
+    const uint64_t physical_address = 4 * TEST_PAGE_SIZE_2MB;
     const uint64_t offset = 0x123456;
 
     pml5[0] = TEST_PML4_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
@@ -381,8 +381,8 @@ void test_vm_translate_5level_1gb_page(void)
 {
     setup_5level_paging();
 
-    const uint64_t virtual_address = TEST_HUGE_PAGE_SIZE;
-    const uint64_t physical_address = 4 * TEST_HUGE_PAGE_SIZE;
+    const uint64_t virtual_address = TEST_PAGE_SIZE_1GB;
+    const uint64_t physical_address = 4 * TEST_PAGE_SIZE_1GB;
     const uint64_t offset = 0x12345678;
 
     pml5[0] = TEST_PML4_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
@@ -429,8 +429,8 @@ void test_vm_translate_2mb_pat_flag(void)
 {
     vm_init();
 
-    const uint64_t virtual_address = TEST_LARGE_PAGE_SIZE;
-    const uint64_t physical_address = 4 * TEST_LARGE_PAGE_SIZE;
+    const uint64_t virtual_address = TEST_PAGE_SIZE_2MB;
+    const uint64_t physical_address = 4 * TEST_PAGE_SIZE_2MB;
 
     pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
     pdpt[0] = TEST_PD_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
@@ -449,8 +449,8 @@ void test_vm_translate_1gb_pat_flag(void)
 {
     vm_init();
 
-    const uint64_t virtual_address = TEST_HUGE_PAGE_SIZE;
-    const uint64_t physical_address = 4 * TEST_HUGE_PAGE_SIZE;
+    const uint64_t virtual_address = TEST_PAGE_SIZE_1GB;
+    const uint64_t physical_address = 4 * TEST_PAGE_SIZE_1GB;
 
     pml4[0] = TEST_PDPT_PHYSICAL_ADDRESS | TEST_PAGE_PRESENT;
 

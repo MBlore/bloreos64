@@ -34,4 +34,10 @@ bool vm_map_page(uint64_t virt_addr,
                  uint64_t phys_addr,
                  uint64_t flags);
 
+// Remove a 4 KiB virtual memory mapping.
+// The virtual address must be page-aligned.
+// The mapped physical page is not released.
+// Returns false if the mapping cannot be removed.
+bool vm_unmap_page(uint64_t virt_addr);
+
 #endif

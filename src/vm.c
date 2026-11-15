@@ -425,6 +425,82 @@ bool vm_map_page(uint64_t virt_addr,
     return true;
 }
 
+bool vm_unmap_page(uint64_t virt_addr)
+{
+    // The virtual address must be aligned to a 4 KiB page.
+    const uint64_t alignment_mask = PAGE_SIZE - 1;
+
+    if (virt_addr & alignment_mask) {
+        return false;
+    }
+
+    // Reject non-canonical virtual addresses.
+    if (!is_canonical_address(virt_addr)) {
+        return false;
+    }
+
+    // Construct the physical address mask.
+    const uint64_t addrmask = ((1ULL << maxphyaddr) - 1) & ~alignment_mask;
+
+    // Obtain the physical address of the root paging structure.
+    uint64_t pml4addr = get_cr3() & addrmask;
+
+    // Traverse the additional paging level if LA57 is enabled.
+    if (get_cr4() & CR4_LA57) {
+        uint64_t *pml5 = PHYS_TO_VIRT(pml4addr);
+        uint64_t pml5e = pml5[PML5_INDEX(virt_addr)];
+
+        if (!(pml5e & PAGE_PRESENT)) {
+            return false;
+        }
+
+        // Extract the physical address of the PML4.
+        pml4addr = pml5e & addrmask;
+    }
+
+    // Locate the PML4.
+    uint64_t *pml4 = PHYS_TO_VIRT(pml4addr);
+    uint64_t pml4e = pml4[PML4_INDEX(virt_addr)];
+
+    if (!(pml4e & PAGE_PRESENT)) {
+        return false;
+    }
+
+    // Traverse to the PDPT.
+    uint64_t *pdpt = PHYS_TO_VIRT(pml4e & addrmask);
+    uint64_t pdpte = pdpt[PDPT_INDEX(virt_addr)];
+
+    // Reject missing entries and 1 GiB page mappings.
+    if (!(pdpte & PAGE_PRESENT) || (pdpte & PAGE_PS)) {
+        return false;
+    }
+
+    // Traverse to the page directory.
+    uint64_t *pd = PHYS_TO_VIRT(pdpte & addrmask);
+    uint64_t pde = pd[PD_INDEX(virt_addr)];
+
+    // Reject missing entries and 2 MiB page mappings.
+    if (!(pde & PAGE_PRESENT) || (pde & PAGE_PS)) {
+        return false;
+    }
+
+    // Locate the target page table entry.
+    uint64_t *pt = PHYS_TO_VIRT(pde & addrmask);
+    uint64_t *pte = &pt[PT_INDEX(virt_addr)];
+
+    if (!(*pte & PAGE_PRESENT)) {
+        return false;
+    }
+
+    // Remove the virtual memory mapping.
+    *pte = 0;
+
+    // Invalidate the cached translation on the local CPU.
+    invlpg(virt_addr);
+
+    return true;
+}
+
 void vm_init()
 {
     kprintf("Initializing virtual memory...\n");

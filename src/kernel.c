@@ -97,6 +97,8 @@ void kernel_main(void)
 
     vm_init();
 
+    // ---------- VMEM Mapping Testing
+
     // Temporary VMM hardware test.
     const uint64_t test_virtual_address = 0xFFFFC00000000000ULL;
     uint64_t test_physical_address;
@@ -178,6 +180,37 @@ void kernel_main(void)
         kprintf("VMM TEST: Virtual memory write failed.\n");
         hcf();
     }
+
+    // ---------- VMEM Unamp Testing
+
+    // Remove the temporary virtual memory mapping.
+    if (!vm_unmap_page(test_virtual_address)) {
+        kprintf("VMM TEST: Unmapping failed.\n");
+        hcf();
+    }
+
+    kprintf("VMM TEST: Unmapping successful.\n");
+
+    // Verify that the virtual address is no longer mapped.
+    if (vm_translate(test_virtual_address, &test_physical_address)) {
+        kprintf("VMM TEST: Mapping still exists.\n");
+        hcf();
+    }
+
+    kprintf("VMM TEST: Mapping removal verified.\n");
+
+    // Verify that the original HHDM mapping remains accessible.
+    if (*test_page != test_new_value) {
+        kprintf("VMM TEST: Original memory corrupted.\n");
+        hcf();
+    }
+
+    kprintf("VMM TEST: Original memory preserved.\n");
+
+    // Release the physical page through its original HHDM address.
+    kfree((void *)test_page);
+
+    kprintf("VMM TEST: Physical page released.\n");
    
     // Process pending events or idle until an interrupt occurs.
     while(1) {
