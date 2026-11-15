@@ -6,4 +6,4 @@ Then came mapping addresses, so creation of page tables and auto-create tables i
 
 Then we introduced the PAT config to configure page table entries flags to assist with MMIO.
 
-Then MMIO was implemented.
+Then MMIO was implemented, as all MMIO is page entries with extra cache policy flags.

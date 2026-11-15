@@ -40,6 +40,7 @@
 #include <pit.h>
 #include <pci.h>
 #include <nvme.h>
+#include <dma.h>
 #include "kernel.h"
 
 CQueue_t *q_keyboard;
