@@ -231,6 +231,9 @@ typedef struct
 #define NVME_ADMIN_QUEUE_ENTRIES 64
 #define NVME_ADMIN_QUEUE_ID 0
 
+// Maximum number of namespaces supported per controller.
+#define NVME_MAX_NAMESPACES 32
+
 // Represents an identified NVMe storage namespace.
 typedef struct
 {
@@ -253,7 +256,8 @@ typedef struct
 
     nvme_queue_t admin_queue;
     nvme_queue_t io_queue;
-    nvme_namespace_t namespace;
+    uint32_t namespace_ids[NVME_MAX_NAMESPACES];
+    uint32_t namespace_count;
 } nvme_controller_t;
 
 // Represents an independent namespace attached to a controller.
@@ -292,16 +296,20 @@ bool nvme_get_number_of_queues(nvme_controller_t *ctrl);
 bool nvme_identify_controller(nvme_controller_t *ctrl);
 bool nvme_identify_active_namespaces(nvme_controller_t *ctrl);
 bool nvme_identify_namespace(nvme_controller_t *ctrl,
-                             uint32_t namespace_id);
+                             uint32_t namespace_id,
+                            nvme_namespace_t *ns);
 bool nvme_set_number_of_queues(nvme_controller_t *ctrl);
 bool nvme_create_io_completion_queue(nvme_controller_t *ctrl);
 bool nvme_create_io_submission_queue(nvme_controller_t *ctrl);
 
 // NVM I/O operations.
 bool nvme_read_block(nvme_controller_t *ctrl,
+                     const nvme_namespace_t *ns,
                      uint64_t lba,
                      dma_buffer_t *buffer);
+
 bool nvme_write_block(nvme_controller_t *ctrl,
+                      const nvme_namespace_t *ns,
                       uint64_t lba,
                       dma_buffer_t *buffer);
 

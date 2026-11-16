@@ -27,7 +27,8 @@
 #include "internal.h"
 
 static nvme_controller_t controller;
-static block_device_t block_device;
+static nvme_device_t nvme_devices[NVME_MAX_NAMESPACES];
+static block_device_t block_devices[NVME_MAX_NAMESPACES];
 
 // Display the contents of a buffer in hexadecimal.
 #define NVME_HEX_BYTES_PER_LINE 16
@@ -139,22 +140,56 @@ static bool nvme_test_write(nvme_controller_t *ctrl)
 }
 */
 
-static void nvme_reg_block(void)
+static void nvme_reg_block(nvme_device_t *device, block_device_t *block)
 {
-    snprintf(block_device.name, sizeof(block_device.name), "nvme0n%d", (int)controller.namespace.id);
+    snprintf(block->name,
+             sizeof(block->name),
+             "nvme0n%lu",
+             (uint64_t)device->namespace.id);
 
-    block_device.block_size = controller.namespace.block_size;
-    block_device.block_count = controller.namespace.block_count;
-    block_device.context = &controller;
-    block_device.read = nvme_block_read;
-    block_device.write = nvme_block_write;
+    block->block_size = device->namespace.block_size;
+    block->block_count = device->namespace.block_count;
+    block->context = device;
+    block->read = nvme_block_read;
+    block->write = nvme_block_write;
 
-    if (!block_register(&block_device)) {
+    if (!block_register(block)) {
         kprintf("NVME: Failed to register block device.\n");
         return;
     }
 
-    kprintf("NVME: Registered block device '%s'.\n", block_device.name);
+    kprintf("NVME: Registered block device '%s'.\n",
+        block->name);
+}
+
+static void nvme_reg_blocks(void)
+{
+    // Identify and register each discovered namespace.
+    for (uint32_t i = 0; i < controller.namespace_count; i++) {
+
+        nvme_device_t *device = &nvme_devices[i];
+        device->controller = &controller;
+
+        if (!nvme_identify_namespace(
+                &controller,
+                controller.namespace_ids[i],
+                &device->namespace)) {
+
+            if (controller.admin_queue.failed) {
+                break;
+            }
+
+            continue;
+        }
+
+        // Only register storage formats supported by our I/O layer.
+        if (device->namespace.block_size > PAGE_SIZE) {
+            kprintf("NVME: Unsupported namespace block size.\n");
+            continue;
+        }
+
+        nvme_reg_block(device, &block_devices[i]);
+    }
 }
 
 void nvme_init(void)
@@ -240,11 +275,6 @@ void nvme_init(void)
         return;
     }
 
-    // Identify the first namespace in our QEMU configuration.
-    if (!nvme_identify_namespace(&controller, 2)) {
-        return;
-    }
-
     // Negotiate the required number of I/O queues.
     if (!nvme_set_number_of_queues(&controller)) {
         return;
@@ -283,7 +313,7 @@ void nvme_init(void)
 
     nvme_log("NVME: I/O queues ready.\n");
 
-    nvme_reg_block();
+    nvme_reg_blocks();
     
     kprintf("NVME: Initialization complete.\n");
 }

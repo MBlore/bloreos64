@@ -158,6 +158,8 @@ bool nvme_identify_active_namespaces(nvme_controller_t *ctrl)
 {
     dma_buffer_t buffer = {0};
 
+    ctrl->namespace_count = 0;
+
     if (ctrl->admin_queue.failed) {
         return false;
     }
@@ -186,21 +188,24 @@ bool nvme_identify_active_namespaces(nvme_controller_t *ctrl)
         const size_t max_entries =
             NVME_IDENTIFY_DATA_SIZE / sizeof(uint32_t);
 
-        size_t count = 0;
-
         for (size_t i = 0; i < max_entries; i++) {
             if (namespaces[i] == 0) {
                 break;
             }
 
+            if (ctrl->namespace_count >= NVME_MAX_NAMESPACES) {
+                kprintf("NVME: Namespace limit reached.\n");
+                break;
+            }
+
+            // Persist the discovered namespace identifier.
+            ctrl->namespace_ids[ctrl->namespace_count++] = namespaces[i];
+
             nvme_log("NVME: Active namespace ID: %lu\n",
                 (uint64_t)namespaces[i]);
-
-            count++;
         }
 
-        nvme_log("NVME: Active namespaces: %lu\n",
-            (uint64_t)count);
+        kprintf("NVME: Active namespaces: %lu\n", (uint64_t)ctrl->namespace_count);
     }
 
     dma_free(&buffer);
@@ -210,10 +215,11 @@ bool nvme_identify_active_namespaces(nvme_controller_t *ctrl)
 
 // Retrieve identification data for a specific namespace.
 bool nvme_identify_namespace(nvme_controller_t *ctrl,
-                             uint32_t namespace_id)
+                             uint32_t namespace_id,
+                            nvme_namespace_t *ns)
 {
     dma_buffer_t buffer = {0};
-    ctrl->namespace.valid = false;
+    ns->valid = false;
 
     if (ctrl->admin_queue.failed) {
         return false;
@@ -323,11 +329,11 @@ bool nvme_identify_namespace(nvme_controller_t *ctrl,
         nvme_log("NVME: Disk size: %lu bytes\n", size_bytes);
 
         // Persist the namespace geometry for future I/O operations.
-        ctrl->namespace.id = namespace_id;
-        ctrl->namespace.block_size = block_size;
-        ctrl->namespace.block_count = size;
-        ctrl->namespace.capacity_bytes = size_bytes;
-        ctrl->namespace.valid = true;
+        ns->id = namespace_id;
+        ns->block_size = block_size;
+        ns->block_count = size;
+        ns->capacity_bytes = size_bytes;
+        ns->valid = true;
     }
 
     dma_free(&buffer);
