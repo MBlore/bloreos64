@@ -282,16 +282,12 @@ size_t strlen(const char *str)
 
 int strcmp(const char *l, const char *r)
 {
-    while (*l && *r) {
-        if (*l != *r) {
-            return -1;
-        }
-
+    while (*l && *l == *r) {
         l++;
         r++;
     }
 
-    return 0;
+    return (unsigned char)*l - (unsigned char)*r;
 }
 
 /*
@@ -380,4 +376,24 @@ void sprint_binary64(char buff[], uint64_t ch)
             buff[charIndex++] = ' ';
         }
     }
+}
+
+static unsigned char ascii_tolower(unsigned char c)
+{
+    if (c >= 'A' && c <= 'Z') {
+        return c + ('a' - 'A');
+    }
+
+    return c;
+}
+
+int strcasecmp(const char *l, const char *r)
+{
+    while (*l && ascii_tolower(*l) == ascii_tolower(*r)) {
+        l++;
+        r++;
+    }
+
+    // Returns 0 if every char passed compare.
+    return ascii_tolower(*l) - ascii_tolower(*r);
 }

@@ -16,7 +16,9 @@ TEST_SRC := \
     test_vm_unmap.c \
     test_vm_pat.c \
     test_vm_mmio.c \
-	test_crc32.c
+	test_crc32.c \
+	test_unicode.c \
+	test_str.c
 
 TEST_BIN := $(patsubst %.c,bin/%,$(TEST_SRC))
 
@@ -64,6 +66,24 @@ bin/test_crc32: test_crc32.c $(UNITY_SRC) $(CRC32_SRC) ../src/include/crc32.h
 	mkdir -p bin
 	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
 		$(UNITY_SRC) $(CRC32_SRC) $< -o $@
+
+# Unicode library test dependencies.
+UNICODE_SRC := ../src/lib/unicode.c
+
+bin/test_unicode: test_unicode.c $(UNITY_SRC) $(UNICODE_SRC) ../src/include/unicode.h
+	mkdir -p bin
+	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
+		$(UNITY_SRC) $(UNICODE_SRC) $< -o $@
+
+# String library test dependencies.
+STR_SRC := ../src/lib/str.c
+STR_MOCKS := mocks/mock_output.c
+
+bin/test_str: test_str.c $(UNITY_SRC) $(STR_SRC) $(STR_MOCKS) ../src/include/str.h
+	mkdir -p bin
+	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
+		-ffreestanding \
+		$(UNITY_SRC) $(STR_SRC) $(STR_MOCKS) $< -o $@
 
 .PHONY: clean
 clean:

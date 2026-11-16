@@ -77,7 +77,7 @@ make run
 | CPU Arch | x86-64 |
 | EXE Format | ELF64 |
 | Calling Convention | System V AMD64 ABI |
-| Languages | C (eventually GO) |
+| Languages | C / LUA |
 | Compiler | GCC |
 | C Library | musl |
 | System Calls | SYSCALL / SYSRET |
@@ -86,19 +86,25 @@ make run
 | EXE Linking | Static (Dynamic later) |
 | POSIX Standards | Practical |
 
-This all allows eventually to take UNIX programs and run them on BloreOS.
+This all allows eventually to take UNIX programs and run them on BloreOS via ports and recompiling.
 
 ## Milestones
 
-- FAT32 File System IO
-- VFS
-- Basic File Terminal Commands
-- Network Sockets
-- Multi-Core
-- Processes / User Space / Threading
-- Scheduling
-- musl libc Integration
-
+| # | Milestone | Objective |
+| --: | :--- | :--- |
+| 1 | FAT32 File System I/O | Read and write persistent files |
+| 2 | Virtual File System (VFS) | Filesystem-independent interfaces |
+| 3 | Basic Terminal Commands | ls, cat, mkdir, touch, rm |
+| 4 | Kernel Memory Management | SLOB and kernel-owned page tables |
+| 5 | Networking and Sockets | Ethernet, TCP/IP, UDP and BSD sockets |
+| 6 | Process Management | Independent virtual address spaces |
+| 7 | User Space | Ring 3 execution and ELF64 loading |
+| 8 | System Call Interface | Communication between applications and kernel |
+| 9 | Threading and Scheduling | Multitasking and context switching |
+| 10 | Multi-Core Support (SMP) | Utilise multiple CPU cores |
+| 11 | musl libc Integration | Standard C and POSIX interfaces |
+| 12 | Native Application Porting | Run existing open-source UNIX software |
+| 13 | Additional Language Support | LUA Scripting |
 
 
 

@@ -42,6 +42,7 @@ size_t ultoa(uint64_t num, char str[], size_t base);
 
 size_t strlen(const char *str);
 int strcmp(const char *l, const char *r);
+int strcasecmp(const char *l, const char *r);
 
 int snprintf(char buffer[], size_t size, const char format[], ...);
 int vsnprintf(char buffer[], size_t size, const char format[], va_list args);

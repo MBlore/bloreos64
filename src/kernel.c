@@ -44,6 +44,7 @@
 #include <block.h>
 #include <gpt.h>
 #include <partition.h>
+#include <fat32.h>
 
 #include "kernel.h"
 
@@ -54,6 +55,70 @@ CQueue_t *q_keyboard;
 // See specification for further info.
 LIMINE_BASE_REVISION(1)
 
+void run_test(void)
+{
+    partition_t *partition = partition_find("nvme0n2p1");
+
+    if (partition == NULL) {
+        kprintf("FAT32: Partition not found.\n");
+        return;
+    }
+
+    fat32_volume_t volume;
+
+    if (!fat32_init_volume(partition, &volume)) {
+        kprintf("FAT32: Failed to initialise volume.\n");
+        return;
+    }
+
+    const char *paths[] = {
+        "/",
+        "///",
+        "/.",
+        "/..",
+        "/drivers/",
+        "/drivers/.",
+        "/drivers/..",
+        "/drivers/nvme/..",
+        "/drivers/nvme/../..",
+        "/drivers/nvme/../../..",
+        "/drivers//nvme/controller.c",
+        "/drivers/./nvme/controller.c",
+        "/drivers/nvme/../ps2.c",
+        "/drivers/nvme/../../hello.txt",
+        "/hello.txt/",
+        "/hello.txt/.",
+        "/hello.txt/..",
+        "/missing/../hello.txt"
+    };
+
+    fat32_directory_record_t record;
+
+    for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
+        kprintf("Resolving: %s\n", paths[i]);
+
+        fat32_lookup_status_t status = fat32_path_resolve(&volume, paths[i], &record);
+
+        switch (status) {
+            case FAT32_LOOKUP_FOUND:
+                kprintf("  Found: %s\n", record.name);
+                kprintf("  Cluster: %lu\n", (uint64_t)fat32_get_first_cluster(&record.entry));
+                break;
+
+            case FAT32_LOOKUP_NOT_FOUND:
+                kprintf("  Path not found.\n");
+                break;
+
+            case FAT32_LOOKUP_NOT_DIRECTORY:
+                kprintf("  Not a directory.\n");
+                break;
+
+            default:
+                kprintf("  Lookup failed.\n");
+                break;
+        }
+    }
+}
 
 void kernel_main(void)
 {
@@ -110,6 +175,8 @@ void kernel_main(void)
             gpt_discover_partitions(device);
         }
     }
+
+    run_test();
    
     // Process pending events or idle until an interrupt occurs.
     while(1) {
