@@ -114,3 +114,19 @@ bool block_write(block_device_t *device,
     // Delegate the request to the underlying driver.
     return device->write(device->context, lba, count, buffer);
 }
+
+// Return the number of registered block devices.
+uint32_t block_get_count(void)
+{
+    return device_count;
+}
+
+// Retrieve a registered block device by its index.
+block_device_t *block_get_device(uint32_t index)
+{
+    if (index >= device_count) {
+        return NULL;
+    }
+
+    return devices[index];
+}

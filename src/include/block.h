@@ -55,4 +55,7 @@ bool block_read(block_device_t *device, uint64_t lba, uint32_t count, void *buff
 // Write to a device.
 bool block_write(block_device_t *device, uint64_t lba, uint32_t count, const void *buffer);
 
+uint32_t block_get_count(void);
+block_device_t *block_get_device(uint32_t index);
+
 #endif

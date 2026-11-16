@@ -15,7 +15,8 @@ TEST_SRC := \
     test_vm_map.c \
     test_vm_unmap.c \
     test_vm_pat.c \
-    test_vm_mmio.c
+    test_vm_mmio.c \
+	test_crc32.c
 
 TEST_BIN := $(patsubst %.c,bin/%,$(TEST_SRC))
 
@@ -55,6 +56,14 @@ bin/%: %.c $(UNITY_SRC)
 	mkdir -p bin
 	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
 		$(UNITY_SRC) $< -o $@
+
+# CRC32 library test dependencies.
+CRC32_SRC := ../src/lib/crc32.c
+
+bin/test_crc32: test_crc32.c $(UNITY_SRC) $(CRC32_SRC) ../src/include/crc32.h
+	mkdir -p bin
+	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
+		$(UNITY_SRC) $(CRC32_SRC) $< -o $@
 
 .PHONY: clean
 clean:

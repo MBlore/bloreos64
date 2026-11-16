@@ -41,6 +41,10 @@
 #include <pci.h>
 #include <nvme.h>
 #include <dma.h>
+#include <block.h>
+#include <gpt.h>
+#include <partition.h>
+
 #include "kernel.h"
 
 CQueue_t *q_keyboard;
@@ -97,6 +101,15 @@ void kernel_main(void)
     vm_init();
 
     nvme_init();
+
+    // Discover partitions on all registered block devices.
+    for (uint32_t i = 0; i < block_get_count(); i++) {
+        block_device_t *device = block_get_device(i);
+
+        if (device != NULL) {
+            gpt_discover_partitions(device);
+        }
+    }
    
     // Process pending events or idle until an interrupt occurs.
     while(1) {
