@@ -68,7 +68,7 @@ uint32_t cursor_y = 0;
 
 char input_str[256];
 spinlock_t _cursor_lock;
-bool cursor_visible;
+bool cursor_visible = true;
 
 inline void term_fgcolor(uint32_t color)
 {

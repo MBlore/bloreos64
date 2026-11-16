@@ -67,3 +67,39 @@ make
 Run QEmu with latest build:
 
 make run
+
+# Project Details
+
+## Technical Decisions
+
+| Component | Technology |
+| :---------------- | ------: |
+| CPU Arch | x86-64 |
+| EXE Format | ELF64 |
+| Calling Convention | System V AMD64 ABI |
+| Languages | C (eventually GO) |
+| Compiler | GCC |
+| C Library | musl |
+| System Calls | SYSCALL / SYSRET |
+| Application Priv. | Ring 3 |
+| Kernel Priv. | Ring 0 |
+| EXE Linking | Static (Dynamic later) |
+| POSIX Standards | Practical |
+
+This all allows eventually to take UNIX programs and run them on BloreOS.
+
+## Milestones
+
+- FAT32 File System IO
+- VFS
+- Basic File Terminal Commands
+- Network Sockets
+- Multi-Core
+- Processes / User Space / Threading
+- Scheduling
+- musl libc Integration
+
+
+
+
+

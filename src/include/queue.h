@@ -29,7 +29,7 @@ typedef struct {
     uint32_t len;
     volatile uint32_t num_items;
     spinlock_t lock;
-} __attribute__((packed)) CQueue_t;
+} CQueue_t;
 
 CQueue_t*   cqueue_create(uint32_t len);
 bool        cqueue_write(CQueue_t *q, uint32_t val);

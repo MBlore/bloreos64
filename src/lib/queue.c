@@ -42,6 +42,7 @@ CQueue_t* cqueue_create(uint32_t len)
     q->read_i = 0;
     q->write_i = 0;
     q->num_items = 0;
+    q->lock.lock = 0;
     return q;
 }
 
