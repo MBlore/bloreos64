@@ -81,6 +81,79 @@ void fat32_format_short_name(const fat32_directory_entry_t *entry, char *name)
     name[position] = '\0';
 }
 
+
+/*
+ * Converts an ASCII filename into FAT32's 11-byte short-name format.
+ *
+ * Supports standard 8.3 filenames, converting lowercase letters to
+ * uppercase and padding the name and extension with spaces.
+ *
+ * Returns false for invalid or unsupported filenames.
+ */
+bool fat32_make_short_name(const char *filename,
+                           uint8_t name[FAT32_SHORT_NAME_LENGTH])
+{
+    if (filename == NULL || name == NULL || filename[0] == '\0') {
+        return false;
+    }
+
+    memset(name, ' ', FAT32_SHORT_NAME_LENGTH);
+
+    uint32_t base_length = 0;
+    uint32_t extension_length = 0;
+    bool in_extension = false;
+
+    for (const char *cursor = filename; *cursor != '\0'; cursor++) {
+        uint8_t character = (uint8_t)*cursor;
+
+        if (character == '.') {
+            // Only one separator is allowed, after a nonempty base name.
+            if (in_extension || base_length == 0) {
+                return false;
+            }
+
+            in_extension = true;
+            continue;
+        }
+
+        // Accept a conservative subset of valid FAT32 short-name characters.
+        bool valid = (character >= 'A' && character <= 'Z') ||
+                     (character >= 'a' && character <= 'z') ||
+                     (character >= '0' && character <= '9') ||
+                     character == '_' || character == '-';
+
+        if (!valid) {
+            return false;
+        }
+
+        // FAT32 short names are conventionally stored in uppercase.
+        if (character >= 'a' && character <= 'z') {
+            character -= 'a' - 'A';
+        }
+
+        if (!in_extension) {
+            if (base_length >= FAT32_SHORT_NAME_BASE_LENGTH) {
+                return false;
+            }
+
+            name[base_length++] = character;
+        } else {
+            if (extension_length >= FAT32_SHORT_NAME_EXT_LENGTH) {
+                return false;
+            }
+
+            name[FAT32_SHORT_NAME_BASE_LENGTH + extension_length++] = character;
+        }
+    }
+
+    // Reject filenames ending with a dot.
+    if (in_extension && extension_length == 0) {
+        return false;
+    }
+
+    return true;
+}
+
 bool fat32_directory_open(const fat32_volume_t *volume, uint32_t cluster,
                           fat32_directory_iterator_t *iterator)
 {
@@ -341,4 +414,87 @@ bool fat32_directory_write_entry(const fat32_volume_t *volume, uint32_t cluster,
     kfree(buffer);
 
     return success;
+}
+
+
+
+/*
+ * Finds an available directory entry, extending the directory
+ * cluster chain when all existing entries are occupied.
+ *
+ * Returns false on allocation, FAT traversal or disk I/O failure.
+ */
+bool fat32_directory_find_free_entry(const fat32_volume_t *volume,
+                                     uint32_t directory_cluster,
+                                     uint32_t *entry_cluster,
+                                     uint32_t *entry_index)
+{
+    if (volume == NULL || entry_cluster == NULL || entry_index == NULL ||
+        directory_cluster < FAT32_FIRST_DATA_CLUSTER) {
+        return false;
+    }
+
+    uint8_t *buffer = kalloc(volume->bytes_per_cluster);
+
+    if (buffer == NULL) {
+        return false;
+    }
+
+    uint32_t current_cluster = directory_cluster;
+    uint32_t entries_per_cluster =
+        volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
+
+    bool found = false;
+
+    for (uint32_t visited = 0; visited < volume->cluster_count; visited++) {
+        if (!fat32_read_cluster(volume, current_cluster, buffer)) {
+            break;
+        }
+
+        fat32_directory_entry_t *entries =
+            (fat32_directory_entry_t *)buffer;
+
+        for (uint32_t i = 0; i < entries_per_cluster; i++) {
+            uint8_t marker = entries[i].name[0];
+
+            if (marker == FAT32_DIR_ENTRY_DELETED ||
+                marker == FAT32_DIR_ENTRY_END) {
+                *entry_cluster = current_cluster;
+                *entry_index = i;
+                found = true;
+                break;
+            }
+        }
+
+        if (found) {
+            break;
+        }
+
+        uint32_t next_cluster;
+        fat32_chain_status_t status =
+            fat32_next_cluster(volume, current_cluster, &next_cluster);
+
+        if (status == FAT32_CHAIN_ERROR) {
+            break;
+        }
+
+        if (status == FAT32_CHAIN_END) {
+            // Only extend a directory when its existing chain is full.
+            uint32_t new_cluster;
+
+            if (fat32_extend_chain(volume, current_cluster, &new_cluster)) {
+                *entry_cluster = new_cluster;
+                *entry_index = 0;
+                found = true;
+            }
+
+            break;
+        }
+
+        current_cluster = next_cluster;
+    }
+
+    kfree(buffer);
+
+    return found;
 }

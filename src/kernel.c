@@ -56,95 +56,66 @@ CQueue_t *q_keyboard;
 // See specification for further info.
 LIMINE_BASE_REVISION(1)
 
+
 static void run_test(void)
 {
     partition_t *partition = partition_find("nvme0n2p1");
     fat32_volume_t volume;
-    fat32_file_t file;
 
     if (partition == NULL || !fat32_init_volume(partition, &volume)) {
-        kprintf("Failed to initialise FAT32 volume\n");
+        kprintf("FAT32 initialisation: FAIL\n");
         return;
     }
 
-    if (!fat32_file_open(&volume, "/hello.txt", &file)) {
-        kprintf("Failed to open file\n");
+    kprintf("FAT32 initialisation: PASS\n");
+
+    const char *path = "/F30.TXT";
+    fat32_directory_record_t record;
+
+    // Ensure the test file does not already exist.
+    fat32_lookup_status_t status =
+        fat32_path_resolve(&volume, path, &record);
+
+    if (status != FAT32_LOOKUP_NOT_FOUND) {
+        kprintf("Test file initially absent: FAIL\n");
         return;
     }
 
-    const char original[] = "Hello Blore OS!";
-    const size_t original_size = sizeof(original) - 1;
-    const size_t append_size = 2500;
-    const size_t expected_size = original_size + append_size;
+    kprintf("Test file initially absent: PASS\n");
 
-    if (file.size != original_size) {
-        kprintf("Unexpected original file size\n");
-        fat32_file_close(&file);
+    // Creating this file should extend the full root directory.
+    if (!fat32_file_create(&volume, path)) {
+        kprintf("Create file in full directory: FAIL\n");
         return;
     }
 
-    uint32_t first_cluster = file.first_cluster;
+    kprintf("Create file in full directory: PASS\n");
 
-    uint8_t *buffer = kalloc(expected_size);
+    // Resolve the file to inspect its physical directory location.
+    status = fat32_path_resolve(&volume, path, &record);
 
-    if (buffer == NULL) {
-        fat32_file_close(&file);
+    if (status != FAT32_LOOKUP_FOUND) {
+        kprintf("Resolve new file: FAIL\n");
         return;
     }
 
-    // Generate a predictable repeating byte pattern.
-    for (size_t i = 0; i < append_size; i++) {
-        buffer[i] = (uint8_t)i;
-    }
+    kprintf("Resolve new file: PASS\n");
 
-    int64_t position = fat32_file_seek(&file, 0, FAT32_SEEK_END);
+    // The new entry must be in a different cluster from the root.
+    kprintf("Directory expanded: %s\n",
+            record.directory_cluster != volume.root_cluster ? "PASS" : "FAIL");
 
-    kprintf("Seek to EOF: %s\n", position == original_size ? "PASS" : "FAIL");
+    // A newly extended directory should use its first entry.
+    kprintf("First entry in new cluster: %s\n",
+            record.directory_index == 0 ? "PASS" : "FAIL");
 
-    int64_t written = fat32_file_write(&file, buffer, append_size);
-
-    kprintf("Append across clusters: %s\n", written == append_size ? "PASS" : "FAIL");
-    kprintf("Updated file size: %s\n", file.size == expected_size ? "PASS" : "FAIL");
-
-    fat32_file_close(&file);
-
-    if (!fat32_file_open(&volume, "/hello.txt", &file)) {
-        kprintf("Failed to reopen file\n");
-        kfree(buffer);
-        return;
-    }
-
-    kprintf("Persisted file size: %s\n", file.size == expected_size ? "PASS" : "FAIL");
-    kprintf("First cluster unchanged: %s\n",
-            file.first_cluster == first_cluster ? "PASS" : "FAIL");
-
-    memset(buffer, 0, expected_size);
-
-    int64_t bytes_read = fat32_file_read(&file, buffer, expected_size);
-
-    kprintf("Read entire file: %s\n", bytes_read == expected_size ? "PASS" : "FAIL");
-
-    bool original_valid = bytes_read == expected_size &&
-                          memcmp(buffer, original, original_size) == 0;
-
-    kprintf("Original data preserved: %s\n", original_valid ? "PASS" : "FAIL");
-
-    bool appended_valid = bytes_read == expected_size;
-
-    if (appended_valid) {
-        for (size_t i = 0; i < append_size; i++) {
-            if (buffer[original_size + i] != (uint8_t)i) {
-                appended_valid = false;
-                break;
-            }
-        }
-    }
-
-    kprintf("Appended data verified: %s\n", appended_valid ? "PASS" : "FAIL");
-
-    fat32_file_close(&file);
-    kfree(buffer);
+    // The new file should have no allocated data clusters.
+    kprintf("New file is empty: %s\n",
+            record.entry.file_size == 0 &&
+            fat32_get_first_cluster(&record.entry) == 0 ? "PASS" : "FAIL");
 }
+
+
 
 void kernel_main(void)
 {

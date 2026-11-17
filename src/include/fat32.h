@@ -275,6 +275,8 @@ fat32_chain_status_t fat32_next_cluster(const fat32_volume_t *volume, uint32_t c
 
 uint32_t fat32_get_first_cluster(const fat32_directory_entry_t *entry);
 void fat32_format_short_name(const fat32_directory_entry_t *entry, char *name);
+bool fat32_make_short_name(const char *filename,
+                           uint8_t name[FAT32_SHORT_NAME_LENGTH]);
 
 bool fat32_directory_open(const fat32_volume_t *volume, uint32_t cluster,
                           fat32_directory_iterator_t *iterator);
@@ -288,9 +290,18 @@ bool fat32_directory_write_entry(const fat32_volume_t *volume, uint32_t cluster,
 fat32_directory_status_t fat32_directory_next(fat32_directory_iterator_t *iterator,
                                              fat32_directory_record_t *record);
 
+bool fat32_directory_find_free_entry(const fat32_volume_t *volume,
+                                     uint32_t directory_cluster,
+                                     uint32_t *entry_cluster,
+                                     uint32_t *entry_index);
+
 uint8_t fat32_lfn_checksum(const uint8_t *name);
 void fat32_lfn_process(fat32_lfn_state_t *state, const fat32_long_directory_entry_t *entry);
 bool fat32_lfn_validate(const fat32_lfn_state_t *state, const fat32_directory_entry_t *entry);
+bool fat32_lfn_make_entry(const uint16_t *name, uint32_t name_length,
+                         uint8_t order, uint8_t checksum,
+                         fat32_long_directory_entry_t *entry);
+
 bool fat32_format_long_name(const fat32_lfn_state_t *state,
                             const fat32_directory_entry_t *entry, char *name);
 fat32_lookup_status_t fat32_directory_find(const fat32_volume_t *volume, uint32_t cluster,
@@ -304,5 +315,8 @@ int64_t fat32_file_seek(fat32_file_t *file, int64_t offset, fat32_seek_mode_t mo
 int64_t fat32_file_write(fat32_file_t *file, const void *buffer, size_t count);
 bool fat32_file_update_metadata(fat32_file_t *file);
 bool fat32_file_ensure_capacity(fat32_file_t *file, uint64_t capacity);
+bool fat32_file_create(const fat32_volume_t *volume, const char *path);
+bool fat32_file_delete(const fat32_volume_t *volume, const char *path);
+
 
 #endif

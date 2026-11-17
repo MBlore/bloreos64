@@ -144,3 +144,69 @@ bool fat32_format_long_name(const fat32_lfn_state_t *state,
 
     return utf16_to_utf8(state->name, length, name, FAT32_UTF8_NAME_BUFFER_SIZE);
 }
+
+
+/*
+ * Constructs a single FAT32 long filename directory entry.
+ *
+ * Each entry holds up to 13 UTF-16 code units. The final segment
+ * contains a null terminator and 0xFFFF padding when space permits.
+ *
+ * This function only prepares the entry in memory.
+ */
+bool fat32_lfn_make_entry(const uint16_t *name, uint32_t name_length,
+                         uint8_t order, uint8_t checksum,
+                         fat32_long_directory_entry_t *entry)
+{
+    if (name == NULL || entry == NULL ||
+        name_length == 0 || name_length > FAT32_LFN_MAX_LENGTH) {
+        return false;
+    }
+
+    uint32_t entry_count =
+        (name_length + FAT32_LFN_CHARS_PER_ENTRY - 1) /
+        FAT32_LFN_CHARS_PER_ENTRY;
+
+    if (order == 0 || order > entry_count ||
+        entry_count > FAT32_LFN_MAX_ENTRIES) {
+        return false;
+    }
+
+    memset(entry, 0, sizeof(*entry));
+
+    entry->order = order;
+    entry->attributes = FAT32_ATTR_LONG_NAME;
+    entry->type = 0;
+    entry->checksum = checksum;
+    entry->first_cluster_low = 0;
+
+    if (order == entry_count) {
+        entry->order |= FAT32_LFN_LAST_ENTRY;
+    }
+
+    uint32_t offset = (order - 1) * FAT32_LFN_CHARS_PER_ENTRY;
+
+    // Initialise all character positions to FAT32 padding.
+    uint16_t characters[FAT32_LFN_CHARS_PER_ENTRY];
+
+    for (uint32_t i = 0; i < FAT32_LFN_CHARS_PER_ENTRY; i++) {
+        characters[i] = FAT32_LFN_PADDING;
+    }
+
+    // Copy this segment of the filename into the entry.
+    for (uint32_t i = 0; i < FAT32_LFN_CHARS_PER_ENTRY; i++) {
+        uint32_t position = offset + i;
+
+        if (position < name_length) {
+            characters[i] = name[position];
+        } else if (position == name_length) {
+            characters[i] = 0;
+        }
+    }
+
+    memcpy(entry->name_1, characters, sizeof(entry->name_1));
+    memcpy(entry->name_2, characters + 5, sizeof(entry->name_2));
+    memcpy(entry->name_3, characters + 11, sizeof(entry->name_3));
+
+    return true;
+}

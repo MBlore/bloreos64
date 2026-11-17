@@ -18,7 +18,8 @@ TEST_SRC := \
     test_vm_mmio.c \
 	test_crc32.c \
 	test_unicode.c \
-	test_str.c
+	test_str.c \
+	test_fat32_lfn.c
 
 TEST_BIN := $(patsubst %.c,bin/%,$(TEST_SRC))
 
@@ -84,6 +85,19 @@ bin/test_str: test_str.c $(UNITY_SRC) $(STR_SRC) $(STR_MOCKS) ../src/include/str
 	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
 		-ffreestanding \
 		$(UNITY_SRC) $(STR_SRC) $(STR_MOCKS) $< -o $@
+
+
+# FAT32 long filename unit tests.
+FAT32_LFN_SRC := ../src/fs/fat32/lfn.c
+FAT32_UNICODE_SRC := ../src/lib/unicode.c
+
+bin/test_fat32_lfn: test_fat32_lfn.c $(UNITY_SRC) $(FAT32_LFN_SRC) $(FAT32_UNICODE_SRC)
+	mkdir -p bin
+	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
+		-ffunction-sections -fdata-sections \
+		$(UNITY_SRC) $(FAT32_LFN_SRC) $(FAT32_UNICODE_SRC) $< \
+		-Wl,--gc-sections -o $@
+
 
 .PHONY: clean
 clean:

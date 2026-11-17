@@ -476,3 +476,190 @@ bool fat32_file_ensure_capacity(fat32_file_t *file, uint64_t capacity)
 
     return true;
 }
+
+
+/*
+ * Creates an empty regular file in the FAT32 root directory.
+ *
+ * Supports ASCII 8.3 filenames only. The file initially has no
+ * allocated data clusters and a size of zero.
+ *
+ * Returns false if the name is invalid, already exists, no suitable
+ * directory slot is available, or disk I/O fails.
+ */
+bool fat32_file_create(const fat32_volume_t *volume, const char *path)
+{
+    if (volume == NULL || path == NULL || path[0] != '/') {
+        return false;
+    }
+
+    // Only filenames directly within the root directory are supported.
+    const char *filename = path + 1;
+
+    if (*filename == '\0') {
+        return false;
+    }
+
+    for (const char *cursor = filename; *cursor != '\0'; cursor++) {
+        if (*cursor == '/') {
+            return false;
+        }
+    }
+
+    uint8_t short_name[FAT32_SHORT_NAME_LENGTH];
+
+    if (!fat32_make_short_name(filename, short_name)) {
+        return false;
+    }
+
+    // Do not create a file if its name is already in use.
+    fat32_directory_record_t existing;
+
+    fat32_lookup_status_t lookup =
+        fat32_directory_find(volume, volume->root_cluster, filename, &existing);
+
+    if (lookup != FAT32_LOOKUP_NOT_FOUND) {
+        return false;
+    }
+
+    uint32_t entry_cluster;
+    uint32_t entry_index;
+
+    if (!fat32_directory_find_free_entry(volume, volume->root_cluster,
+                                         &entry_cluster, &entry_index)) {
+        return false;
+    }
+
+    fat32_directory_entry_t previous;
+
+    if (!fat32_directory_read_entry(volume, entry_cluster, entry_index, &previous)) {
+        return false;
+    }
+
+    // Confirm that the slot is still available.
+    if (previous.name[0] != FAT32_DIR_ENTRY_DELETED &&
+        previous.name[0] != FAT32_DIR_ENTRY_END) {
+        return false;
+    }
+
+    if (previous.name[0] == FAT32_DIR_ENTRY_END) {
+        uint32_t entries_per_cluster =
+            volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
+
+        // Preserve the end marker if another slot exists in this cluster.
+        // A completely full directory chain does not require a 0x00 marker.
+        if (entry_index + 1 < entries_per_cluster) {
+            fat32_directory_entry_t end_entry;
+
+            memset(&end_entry, 0, sizeof(end_entry));
+
+            if (!fat32_directory_write_entry(volume, entry_cluster,
+                                            entry_index + 1, &end_entry)) {
+                return false;
+            }
+        }
+    }
+
+    // Initialise the new file's short directory entry.
+    fat32_directory_entry_t entry;
+
+    memset(&entry, 0, sizeof(entry));
+    memcpy(entry.name, short_name, FAT32_SHORT_NAME_LENGTH);
+
+    entry.attributes = FAT32_ATTR_ARCHIVE;
+    entry.file_size = 0;
+    entry.first_cluster_high = 0;
+    entry.first_cluster_low = 0;
+
+    return fat32_directory_write_entry(volume, entry_cluster, entry_index, &entry);
+}
+
+
+/*
+ * Deletes a regular file from the FAT32 root directory.
+ *
+ * Currently supports ASCII 8.3 filenames only. Directories,
+ * read-only files and long filename entries are not supported.
+ *
+ * Marks the directory entry as deleted before releasing the
+ * file's cluster chain.
+ *
+ * Returns false if validation or disk I/O fails.
+ *
+ * This operation is not atomic. A failure after marking the
+ * directory entry deleted may leave allocated clusters orphaned.
+ */
+bool fat32_file_delete(const fat32_volume_t *volume, const char *path)
+{
+    if (volume == NULL || path == NULL || path[0] != '/') {
+        return false;
+    }
+
+    // Only files directly inside the root directory are supported.
+    const char *filename = path + 1;
+
+    if (*filename == '\0') {
+        return false;
+    }
+
+    for (const char *cursor = filename; *cursor != '\0'; cursor++) {
+        if (*cursor == '/') {
+            return false;
+        }
+    }
+
+    // Require a valid short filename for this initial implementation.
+    uint8_t short_name[FAT32_SHORT_NAME_LENGTH];
+
+    if (!fat32_make_short_name(filename, short_name)) {
+        return false;
+    }
+
+    fat32_directory_record_t record;
+
+    if (fat32_directory_find(volume, volume->root_cluster,
+                             filename, &record) != FAT32_LOOKUP_FOUND) {
+        return false;
+    }
+
+    // Do not delete directories, read-only files or volume labels.
+    if (record.entry.attributes &
+        (FAT32_ATTR_DIRECTORY | FAT32_ATTR_READ_ONLY | FAT32_ATTR_VOLUME_ID)) {
+        return false;
+    }
+
+    // Ensure this is the actual short entry we intend to delete.
+    if (memcmp(record.entry.name, short_name,
+               FAT32_SHORT_NAME_LENGTH) != 0) {
+        return false;
+    }
+
+    uint32_t first_cluster =
+        ((uint32_t)record.entry.first_cluster_high << 16) |
+        record.entry.first_cluster_low;
+
+    // An empty file may legitimately have no allocated clusters.
+    if (first_cluster == 0 && record.entry.file_size != 0) {
+        return false;
+    }
+
+    // Mark the directory entry as deleted.
+    fat32_directory_entry_t deleted_entry = record.entry;
+
+    deleted_entry.name[0] = FAT32_DIR_ENTRY_DELETED;
+
+    if (!fat32_directory_write_entry(volume, record.directory_cluster,
+                                     record.directory_index, &deleted_entry)) {
+        return false;
+    }
+
+    // Release the file's allocated data clusters.
+    if (first_cluster >= FAT32_FIRST_DATA_CLUSTER) {
+        if (!fat32_release_chain(volume, first_cluster)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
