@@ -277,6 +277,9 @@ uint32_t fat32_get_first_cluster(const fat32_directory_entry_t *entry);
 void fat32_format_short_name(const fat32_directory_entry_t *entry, char *name);
 bool fat32_make_short_name(const char *filename,
                            uint8_t name[FAT32_SHORT_NAME_LENGTH]);
+bool fat32_make_short_alias(const char *filename, uint32_t sequence,
+                            uint8_t name[FAT32_SHORT_NAME_LENGTH]);
+
 
 bool fat32_directory_open(const fat32_volume_t *volume, uint32_t cluster,
                           fat32_directory_iterator_t *iterator);
@@ -294,6 +297,36 @@ bool fat32_directory_find_free_entry(const fat32_volume_t *volume,
                                      uint32_t directory_cluster,
                                      uint32_t *entry_cluster,
                                      uint32_t *entry_index);
+
+bool fat32_directory_find_free_entries(const fat32_volume_t *volume,
+                                       uint32_t directory_cluster,
+                                       uint32_t required_entries,
+                                       uint32_t *entry_cluster,
+                                       uint32_t *entry_index);
+
+bool fat32_directory_write_long_name(const fat32_volume_t *volume,
+                                     uint32_t entry_cluster,
+                                     uint32_t entry_index,
+                                     const uint16_t *name,
+                                     uint32_t name_length,
+                                     const fat32_directory_entry_t *short_entry);
+
+typedef enum {
+    FAT32_SHORT_NAME_NOT_FOUND,
+    FAT32_SHORT_NAME_FOUND,
+    FAT32_SHORT_NAME_ERROR
+} fat32_short_name_status_t;
+
+fat32_short_name_status_t fat32_directory_short_name_exists(
+    const fat32_volume_t *volume,
+    uint32_t directory_cluster,
+    const uint8_t name[FAT32_SHORT_NAME_LENGTH]);
+
+bool fat32_directory_find_short_alias(
+    const fat32_volume_t *volume,
+    uint32_t directory_cluster,
+    const char *filename,
+    uint8_t alias[FAT32_SHORT_NAME_LENGTH]);
 
 uint8_t fat32_lfn_checksum(const uint8_t *name);
 void fat32_lfn_process(fat32_lfn_state_t *state, const fat32_long_directory_entry_t *entry);

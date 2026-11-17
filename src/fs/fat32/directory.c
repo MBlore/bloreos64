@@ -154,6 +154,131 @@ bool fat32_make_short_name(const char *filename,
     return true;
 }
 
+
+/*
+ * Generates a numbered FAT32 8.3 alias for a long filename.
+ *
+ * The sequence number determines the ~N suffix. This function
+ * only formats an alias; it does not check directory collisions.
+ *
+ * Currently supports ASCII filenames. Unsupported characters
+ * are removed from the alias, not from the original long name.
+ */
+bool fat32_make_short_alias(const char *filename, uint32_t sequence,
+                            uint8_t name[FAT32_SHORT_NAME_LENGTH])
+{
+    if (filename == NULL || name == NULL || filename[0] == '\0' ||
+        sequence == 0 || sequence > 999999) {
+        return false;
+    }
+
+    const char *extension = NULL;
+    const char *end = filename;
+
+    for (const char *cursor = filename; *cursor != '\0'; cursor++) {
+        uint8_t character = (uint8_t)*cursor;
+
+        // UTF-8 alias generation will be handled separately.
+        if (character >= 0x80 || character == '/' || character == '\\') {
+            return false;
+        }
+
+        if (character == '.') {
+            extension = cursor;
+        }
+
+        end = cursor + 1;
+    }
+
+    if (extension == filename) {
+        return false;
+    }
+
+    // Ignore a trailing dot when selecting the extension.
+    if (extension == end - 1) {
+        extension = NULL;
+    }
+
+    char suffix[8];
+    uint32_t suffix_length = 0;
+
+    suffix[suffix_length++] = '~';
+
+    char digits[6];
+    uint32_t digit_count = 0;
+
+    do {
+        digits[digit_count++] = '0' + (sequence % 10);
+        sequence /= 10;
+    } while (sequence != 0);
+
+    while (digit_count > 0) {
+        suffix[suffix_length++] = digits[--digit_count];
+    }
+
+    uint32_t base_capacity =
+        FAT32_SHORT_NAME_BASE_LENGTH - suffix_length;
+
+    memset(name, ' ', FAT32_SHORT_NAME_LENGTH);
+
+    const char *base_end = extension != NULL ? extension : end;
+    uint32_t base_length = 0;
+
+    for (const char *cursor = filename; cursor < base_end; cursor++) {
+        uint8_t character = (uint8_t)*cursor;
+
+        bool valid = (character >= 'A' && character <= 'Z') ||
+                     (character >= 'a' && character <= 'z') ||
+                     (character >= '0' && character <= '9') ||
+                     character == '_';
+
+        if (!valid) {
+            continue;
+        }
+
+        if (character >= 'a' && character <= 'z') {
+            character -= 'a' - 'A';
+        }
+
+        if (base_length < base_capacity) {
+            name[base_length++] = character;
+        }
+    }
+
+    if (base_length == 0) {
+        return false;
+    }
+
+    memcpy(name + base_length, suffix, suffix_length);
+
+    if (extension != NULL) {
+        uint32_t extension_length = 0;
+
+        for (const char *cursor = extension + 1;
+             *cursor != '\0' && extension_length < FAT32_SHORT_NAME_EXT_LENGTH;
+             cursor++) {
+            uint8_t character = (uint8_t)*cursor;
+
+            bool valid = (character >= 'A' && character <= 'Z') ||
+                         (character >= 'a' && character <= 'z') ||
+                         (character >= '0' && character <= '9') ||
+                         character == '_';
+
+            if (!valid) {
+                continue;
+            }
+
+            if (character >= 'a' && character <= 'z') {
+                character -= 'a' - 'A';
+            }
+
+            name[FAT32_SHORT_NAME_BASE_LENGTH + extension_length++] = character;
+        }
+    }
+
+    return true;
+}
+
 bool fat32_directory_open(const fat32_volume_t *volume, uint32_t cluster,
                           fat32_directory_iterator_t *iterator)
 {
@@ -498,3 +623,473 @@ bool fat32_directory_find_free_entry(const fat32_volume_t *volume,
 
     return found;
 }
+
+
+/*
+ * Finds a consecutive run of free directory entries.
+ *
+ * Deleted entries are reusable. Once an end-of-directory marker
+ * is encountered, all subsequent slots are logically unused.
+ *
+ * The directory chain is extended if the available run reaches
+ * its end before enough entries have been found.
+ *
+ * This operation may allocate clusters but does not write entries.
+ */
+bool fat32_directory_find_free_entries(const fat32_volume_t *volume,
+                                       uint32_t directory_cluster,
+                                       uint32_t required_entries,
+                                       uint32_t *entry_cluster,
+                                       uint32_t *entry_index)
+{
+    if (volume == NULL || entry_cluster == NULL || entry_index == NULL ||
+        directory_cluster < FAT32_FIRST_DATA_CLUSTER ||
+        required_entries == 0 ||
+        required_entries > FAT32_LFN_MAX_ENTRIES + 1) {
+        return false;
+    }
+
+    uint32_t entries_per_cluster =
+        volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
+
+    if (entries_per_cluster == 0) {
+        return false;
+    }
+
+    uint8_t *buffer = kalloc(volume->bytes_per_cluster);
+
+    if (buffer == NULL) {
+        return false;
+    }
+
+    uint32_t current_cluster = directory_cluster;
+    uint32_t run_cluster = 0;
+    uint32_t run_index = 0;
+    uint32_t run_length = 0;
+    uint32_t clusters_visited = 0;
+
+    bool after_end_marker = false;
+    bool found = false;
+
+    while (clusters_visited < volume->cluster_count) {
+        if (!fat32_read_cluster(volume, current_cluster, buffer)) {
+            break;
+        }
+
+        clusters_visited++;
+
+        fat32_directory_entry_t *entries =
+            (fat32_directory_entry_t *)buffer;
+
+        for (uint32_t i = 0; i < entries_per_cluster; i++) {
+            uint8_t marker = entries[i].name[0];
+
+            if (marker == FAT32_DIR_ENTRY_END) {
+                after_end_marker = true;
+            }
+
+            bool available = after_end_marker ||
+                             marker == FAT32_DIR_ENTRY_DELETED;
+
+            if (available) {
+                if (run_length == 0) {
+                    run_cluster = current_cluster;
+                    run_index = i;
+                }
+
+                run_length++;
+
+                if (run_length == required_entries) {
+                    *entry_cluster = run_cluster;
+                    *entry_index = run_index;
+                    found = true;
+                    break;
+                }
+            } else {
+                // An occupied entry interrupts the current run.
+                run_length = 0;
+            }
+        }
+
+        if (found) {
+            break;
+        }
+
+        uint32_t next_cluster;
+
+        fat32_chain_status_t status =
+            fat32_next_cluster(volume, current_cluster, &next_cluster);
+
+        if (status == FAT32_CHAIN_ERROR) {
+            break;
+        }
+
+        if (status == FAT32_CHAIN_END) {
+            /*
+             * The current chain does not contain enough space.
+             * Allocate another cluster and continue the run.
+             *
+             * The newly allocated cluster is zero-initialised
+             * by fat32_allocate_cluster().
+             */
+            if (clusters_visited >= volume->cluster_count) {
+                break;
+            }
+
+            if (!fat32_extend_chain(volume, current_cluster, &next_cluster)) {
+                break;
+            }
+        }
+
+        current_cluster = next_cluster;
+    }
+
+    kfree(buffer);
+
+    return found;
+}
+
+
+/*
+ * Advances a directory entry position within an existing FAT chain.
+ *
+ * Returns false if the position is at the end of the chain or
+ * the FAT cannot be read.
+ */
+static bool fat32_directory_advance_entry(const fat32_volume_t *volume,
+                                          uint32_t *cluster,
+                                          uint32_t *index)
+{
+    uint32_t entries_per_cluster =
+        volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
+
+    if (*index + 1 < entries_per_cluster) {
+        (*index)++;
+        return true;
+    }
+
+    uint32_t next_cluster;
+
+    if (fat32_next_cluster(volume, *cluster, &next_cluster) != FAT32_CHAIN_NEXT) {
+        return false;
+    }
+
+    *cluster = next_cluster;
+    *index = 0;
+
+    return true;
+}
+
+
+/*
+ * Writes an LFN sequence followed by its short directory entry.
+ *
+ * All target entries are validated and backed up before writing.
+ * If a write fails, the failed entry and previously modified entries
+ * are restored using their original contents.
+ *
+ * Rollback is best-effort. This does not guarantee crash consistency
+ * or recovery from persistent disk I/O failures.
+ */
+bool fat32_directory_write_long_name(const fat32_volume_t *volume,
+                                     uint32_t entry_cluster,
+                                     uint32_t entry_index,
+                                     const uint16_t *name,
+                                     uint32_t name_length,
+                                     const fat32_directory_entry_t *short_entry)
+{
+    if (volume == NULL || name == NULL || short_entry == NULL ||
+        name_length == 0 || name_length > FAT32_LFN_MAX_LENGTH ||
+        entry_cluster < FAT32_FIRST_DATA_CLUSTER) {
+        return false;
+    }
+
+    uint32_t entries_per_cluster =
+        volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
+
+    if (entries_per_cluster == 0 || entry_index >= entries_per_cluster) {
+        return false;
+    }
+
+    uint32_t lfn_count =
+        (name_length + FAT32_LFN_CHARS_PER_ENTRY - 1) /
+        FAT32_LFN_CHARS_PER_ENTRY;
+
+    uint32_t total_entries = lfn_count + 1;
+
+    // Save the physical position and original contents of every target entry.
+    uint32_t clusters[FAT32_LFN_MAX_ENTRIES + 1];
+    uint32_t indices[FAT32_LFN_MAX_ENTRIES + 1];
+    fat32_directory_entry_t originals[FAT32_LFN_MAX_ENTRIES + 1];
+
+    uint32_t cluster = entry_cluster;
+    uint32_t index = entry_index;
+    bool after_end_marker = false;
+
+    // Validate all target entries before modifying the directory.
+    for (uint32_t i = 0; i < total_entries; i++) {
+        clusters[i] = cluster;
+        indices[i] = index;
+
+        if (!fat32_directory_read_entry(volume, cluster, index, &originals[i])) {
+            return false;
+        }
+
+        uint8_t marker = originals[i].name[0];
+
+        if (marker == FAT32_DIR_ENTRY_END) {
+            after_end_marker = true;
+        }
+
+        if (!after_end_marker && marker != FAT32_DIR_ENTRY_DELETED) {
+            return false;
+        }
+
+        if (i + 1 < total_entries &&
+            !fat32_directory_advance_entry(volume, &cluster, &index)) {
+            return false;
+        }
+    }
+
+    // Locate the entry immediately following the short-name entry.
+    uint32_t end_cluster = cluster;
+    uint32_t end_index = index;
+
+    bool has_next_entry =
+        fat32_directory_advance_entry(volume, &end_cluster, &end_index);
+
+    fat32_directory_entry_t original_end_entry;
+    bool end_entry_modified = false;
+
+    if (after_end_marker && has_next_entry) {
+        if (!fat32_directory_read_entry(volume, end_cluster, end_index,
+                                        &original_end_entry)) {
+            return false;
+        }
+    }
+
+    // Prepare all LFN entries before writing anything to disk.
+    uint8_t checksum = fat32_lfn_checksum(short_entry->name);
+    fat32_long_directory_entry_t long_entries[FAT32_LFN_MAX_ENTRIES];
+
+    for (uint32_t i = 0; i < lfn_count; i++) {
+        uint8_t order = (uint8_t)(lfn_count - i);
+
+        if (!fat32_lfn_make_entry(name, name_length, order,
+                                 checksum, &long_entries[i])) {
+            return false;
+        }
+    }
+
+    uint32_t written_count = 0;
+    uint32_t failed_slot = 0;
+
+    /*
+     * Move the end marker before writing the LFN sequence.
+     *
+     * If this write fails, attempt to restore its original contents
+     * because the underlying write may have partially succeeded.
+     */
+    if (after_end_marker && has_next_entry) {
+        fat32_directory_entry_t end_entry;
+
+        memset(&end_entry, 0, sizeof(end_entry));
+
+        if (!fat32_directory_write_entry(volume, end_cluster,
+                                         end_index, &end_entry)) {
+            fat32_directory_write_entry(volume, end_cluster, end_index,
+                                        &original_end_entry);
+            return false;
+        }
+
+        end_entry_modified = true;
+    }
+
+    // Write the LFN entries in descending order.
+    for (uint32_t i = 0; i < lfn_count; i++) {
+        fat32_directory_entry_t disk_entry;
+
+        memcpy(&disk_entry, &long_entries[i], sizeof(disk_entry));
+
+        if (!fat32_directory_write_entry(volume, clusters[i],
+                                         indices[i], &disk_entry)) {
+            failed_slot = i;
+            goto rollback;
+        }
+
+        written_count++;
+    }
+
+    // Publish the short-name entry only after all LFN entries succeed.
+    if (!fat32_directory_write_entry(volume, clusters[lfn_count],
+                                     indices[lfn_count], short_entry)) {
+        failed_slot = lfn_count;
+        goto rollback;
+    }
+
+    return true;
+
+rollback:
+    /*
+     * Restore the entry whose write failed first.
+     *
+     * This is necessary even when the write returned false, since
+     * the storage device may have partially modified the entry.
+     */
+    bool rollback_success =
+        fat32_directory_write_entry(volume, clusters[failed_slot],
+                                    indices[failed_slot],
+                                    &originals[failed_slot]);
+
+    // Restore previously written LFN entries in reverse order.
+    while (written_count > 0) {
+        written_count--;
+
+        if (!fat32_directory_write_entry(volume, clusters[written_count],
+                                         indices[written_count],
+                                         &originals[written_count])) {
+            rollback_success = false;
+        }
+    }
+
+    // Restore the entry following the allocated sequence, if modified.
+    if (end_entry_modified) {
+        if (!fat32_directory_write_entry(volume, end_cluster, end_index,
+                                         &original_end_entry)) {
+            rollback_success = false;
+        }
+    }
+
+    /*
+     * The operation failed regardless of whether rollback succeeded.
+     * A failed rollback may leave the directory requiring repair.
+     */
+    (void)rollback_success;
+
+    return false;
+}
+
+
+
+/*
+ * Checks whether an 11-byte FAT32 short name already exists
+ * in a directory, including aliases belonging to LFN files.
+ *
+ * Returns FOUND when a matching entry exists, NOT_FOUND when
+ * the complete directory has been searched without a match,
+ * or ERROR if validation, reading or FAT traversal fails.
+ */
+fat32_short_name_status_t fat32_directory_short_name_exists(
+    const fat32_volume_t *volume,
+    uint32_t directory_cluster,
+    const uint8_t name[FAT32_SHORT_NAME_LENGTH])
+{
+    if (volume == NULL || name == NULL ||
+        directory_cluster < FAT32_FIRST_DATA_CLUSTER) {
+        return FAT32_SHORT_NAME_ERROR;
+    }
+
+    uint32_t entries_per_cluster =
+        volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
+
+    if (entries_per_cluster == 0) {
+        return FAT32_SHORT_NAME_ERROR;
+    }
+
+    uint32_t cluster = directory_cluster;
+
+    // Limit traversal to the volume's cluster count to avoid loops.
+    for (uint32_t visited = 0; visited < volume->cluster_count; visited++) {
+        for (uint32_t index = 0; index < entries_per_cluster; index++) {
+            fat32_directory_entry_t entry;
+
+            if (!fat32_directory_read_entry(volume, cluster, index, &entry)) {
+                return FAT32_SHORT_NAME_ERROR;
+            }
+
+            uint8_t marker = entry.name[0];
+
+            if (marker == FAT32_DIR_ENTRY_END) {
+                return FAT32_SHORT_NAME_NOT_FOUND;
+            }
+
+            if (marker == FAT32_DIR_ENTRY_DELETED ||
+                entry.attributes == FAT32_ATTR_LONG_NAME) {
+                continue;
+            }
+
+            if (memcmp(entry.name, name, FAT32_SHORT_NAME_LENGTH) == 0) {
+                return FAT32_SHORT_NAME_FOUND;
+            }
+        }
+
+        uint32_t next_cluster;
+        fat32_chain_status_t status =
+            fat32_next_cluster(volume, cluster, &next_cluster);
+
+        if (status == FAT32_CHAIN_END) {
+            return FAT32_SHORT_NAME_NOT_FOUND;
+        }
+
+        if (status == FAT32_CHAIN_ERROR) {
+            return FAT32_SHORT_NAME_ERROR;
+        }
+
+        cluster = next_cluster;
+    }
+
+    // Reaching the traversal limit suggests a malformed cluster chain.
+    return FAT32_SHORT_NAME_ERROR;
+}
+
+
+/*
+ * Finds the first available numbered FAT32 short-name alias.
+ *
+ * Candidates are generated in sequence, starting at ~1.
+ * An existing alias causes the next candidate to be tried.
+ * Any directory read or FAT traversal error aborts selection.
+ *
+ * Returns false if the filename is invalid, the directory cannot
+ * be searched, or all supported sequence numbers are exhausted.
+ */
+bool fat32_directory_find_short_alias(
+    const fat32_volume_t *volume,
+    uint32_t directory_cluster,
+    const char *filename,
+    uint8_t alias[FAT32_SHORT_NAME_LENGTH])
+{
+    if (volume == NULL || filename == NULL || alias == NULL ||
+        directory_cluster < FAT32_FIRST_DATA_CLUSTER) {
+        return false;
+    }
+
+    const uint32_t max_sequence = 999999;
+
+    for (uint32_t sequence = 1; sequence <= max_sequence; sequence++) {
+        uint8_t candidate[FAT32_SHORT_NAME_LENGTH];
+
+        if (!fat32_make_short_alias(filename, sequence, candidate)) {
+            return false;
+        }
+
+        fat32_short_name_status_t status =
+            fat32_directory_short_name_exists(
+                volume, directory_cluster, candidate);
+
+        if (status == FAT32_SHORT_NAME_ERROR) {
+            return false;
+        }
+
+        if (status == FAT32_SHORT_NAME_NOT_FOUND) {
+            memcpy(alias, candidate, FAT32_SHORT_NAME_LENGTH);
+            return true;
+        }
+
+        // This candidate is occupied; try the next sequence number.
+    }
+
+    return false;
+}
+
+
