@@ -78,3 +78,173 @@ bool fat32_file_open(const fat32_volume_t *volume, const char *path, fat32_file_
 
     return true;
 }
+
+/*
+ * Closes an open file and releases its allocated resources.
+ *
+ * The file handle is reset to an unopened state so it can be reused.
+ */
+void fat32_file_close(fat32_file_t *file)
+{
+    if (file == NULL) {
+        return;
+    }
+
+    if (file->buffer != NULL) {
+        kfree(file->buffer);
+    }
+
+    memset(file, 0, sizeof(fat32_file_t));
+}
+
+/*
+ * Loads the requested logical file cluster into the cache.
+ */
+static bool fat32_file_load_cluster(fat32_file_t *file, uint32_t cluster_index)
+{
+    if (cluster_index >= file->volume->cluster_count) {
+        return false;
+    }
+
+    // Restart traversal when accessing an earlier cluster.
+    if (cluster_index < file->cluster_index) {
+        file->current_cluster = file->first_cluster;
+        file->cluster_index = 0;
+        file->buffer_valid = false;
+    }
+
+    // Traverse the FAT chain until the requested cluster is reached.
+    while (file->cluster_index < cluster_index) {
+        uint32_t next_cluster;
+
+        if (fat32_next_cluster(file->volume, file->current_cluster,
+                               &next_cluster) != FAT32_CHAIN_NEXT) {
+            return false;
+        }
+
+        file->current_cluster = next_cluster;
+        file->cluster_index++;
+        file->buffer_valid = false;
+    }
+
+    // Only perform disk I/O when the cached cluster is invalid.
+    if (!file->buffer_valid) {
+        if (!fat32_read_cluster(file->volume, file->current_cluster, file->buffer)) {
+            return false;
+        }
+
+        file->buffer_valid = true;
+    }
+
+    return true;
+}
+
+/*
+ * Reads up to count bytes from the current file position.
+ *
+ * Returns the number of bytes read, zero at EOF, or -1 on error
+ * if no bytes have been successfully read.
+ */
+int64_t fat32_file_read(fat32_file_t *file, void *buffer, size_t count)
+{
+    if (file == NULL || file->volume == NULL) {
+        return -1;
+    }
+
+    if (count == 0) {
+        return 0;
+    }
+
+    if (buffer == NULL) {
+        return -1;
+    }
+
+    if (file->position >= file->size) {
+        return 0;
+    }
+
+    // Prevent reads beyond the end of the file.
+    uint64_t remaining = file->size - file->position;
+
+    if (count > remaining) {
+        count = remaining;
+    }
+
+    uint8_t *destination = buffer;
+    size_t bytes_read = 0;
+    uint32_t cluster_size = file->volume->bytes_per_cluster;
+
+    while (bytes_read < count) {
+        uint32_t cluster_index = file->position / cluster_size;
+        uint32_t cluster_offset = file->position % cluster_size;
+
+        if (!fat32_file_load_cluster(file, cluster_index)) {
+            return bytes_read > 0 ? (int64_t)bytes_read : -1;
+        }
+
+        // Limit the copy to the remaining bytes in this cluster.
+        size_t chunk_size = cluster_size - cluster_offset;
+
+        if (chunk_size > count - bytes_read) {
+            chunk_size = count - bytes_read;
+        }
+
+        memcpy(destination + bytes_read, file->buffer + cluster_offset, chunk_size);
+
+        bytes_read += chunk_size;
+        file->position += chunk_size;
+    }
+
+    return (int64_t)bytes_read;
+}
+
+/*
+ * Changes the logical position within an open file.
+ *
+ * Seeking beyond the end of the file is permitted, but seeking
+ * before the beginning of the file is not.
+ *
+ * Returns the new file position, or -1 on error.
+ * The existing file position remains unchanged on failure.
+ */
+int64_t fat32_file_seek(fat32_file_t *file, int64_t offset, fat32_seek_mode_t mode)
+{
+    if (file == NULL || file->volume == NULL) {
+        return -1;
+    }
+
+    int64_t base;
+
+    switch (mode) {
+        case FAT32_SEEK_SET:
+            base = 0;
+            break;
+
+        case FAT32_SEEK_CUR:
+            base = (int64_t)file->position;
+            break;
+
+        case FAT32_SEEK_END:
+            base = (int64_t)file->size;
+            break;
+
+        default:
+            return -1;
+    }
+
+    // Prevent signed integer overflow.
+    if (offset > 0 && base > INT64_MAX - offset) {
+        return -1;
+    }
+
+    // Prevent seeking before the beginning of the file.
+    if (offset < -base) {
+        return -1;
+    }
+
+    int64_t position = base + offset;
+
+    file->position = (uint64_t)position;
+
+    return position;
+}

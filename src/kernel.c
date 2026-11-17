@@ -45,6 +45,7 @@
 #include <gpt.h>
 #include <partition.h>
 #include <fat32.h>
+#include <crc32.h>
 
 #include "kernel.h"
 
@@ -60,64 +61,89 @@ void run_test(void)
     partition_t *partition = partition_find("nvme0n2p1");
 
     if (partition == NULL) {
-        kprintf("FAT32: Partition not found.\n");
+        kprintf("Partition not found\n");
         return;
     }
 
     fat32_volume_t volume;
 
     if (!fat32_init_volume(partition, &volume)) {
-        kprintf("FAT32: Failed to initialise volume.\n");
+        kprintf("Failed to initialise FAT32 volume\n");
         return;
     }
 
-    const char *paths[] = {
-        "/",
-        "///",
-        "/.",
-        "/..",
-        "/drivers/",
-        "/drivers/.",
-        "/drivers/..",
-        "/drivers/nvme/..",
-        "/drivers/nvme/../..",
-        "/drivers/nvme/../../..",
-        "/drivers//nvme/controller.c",
-        "/drivers/./nvme/controller.c",
-        "/drivers/nvme/../ps2.c",
-        "/drivers/nvme/../../hello.txt",
-        "/hello.txt/",
-        "/hello.txt/.",
-        "/hello.txt/..",
-        "/missing/../hello.txt"
-    };
+    fat32_file_t file;
 
-    fat32_directory_record_t record;
-
-    for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
-        kprintf("Resolving: %s\n", paths[i]);
-
-        fat32_lookup_status_t status = fat32_path_resolve(&volume, paths[i], &record);
-
-        switch (status) {
-            case FAT32_LOOKUP_FOUND:
-                kprintf("  Found: %s\n", record.name);
-                kprintf("  Cluster: %lu\n", (uint64_t)fat32_get_first_cluster(&record.entry));
-                break;
-
-            case FAT32_LOOKUP_NOT_FOUND:
-                kprintf("  Path not found.\n");
-                break;
-
-            case FAT32_LOOKUP_NOT_DIRECTORY:
-                kprintf("  Not a directory.\n");
-                break;
-
-            default:
-                kprintf("  Lookup failed.\n");
-                break;
-        }
+    if (!fat32_file_open(&volume, "/drivers/nvme/controller.c", &file)) {
+        kprintf("Failed to open file\n");
+        return;
     }
+
+    // Load the complete file as a reference for random-access reads.
+    uint8_t *reference = kalloc(file.size);
+
+    if (reference == NULL) {
+        fat32_file_close(&file);
+        return;
+    }
+
+    if (fat32_file_read(&file, reference, file.size) != (int64_t)file.size) {
+        kprintf("Failed to read reference data\n");
+        kfree(reference);
+        fat32_file_close(&file);
+        return;
+    }
+
+    uint8_t buffer[512];
+    int64_t position;
+    int64_t bytes_read;
+
+    // Seek forwards from the beginning of the file.
+    position = fat32_file_seek(&file, 900, FAT32_SEEK_SET);
+    bytes_read = fat32_file_read(&file, buffer, sizeof(buffer));
+
+    kprintf("SEEK_SET: %s\n",
+            position == 900 && bytes_read == sizeof(buffer) &&
+            memcmp(buffer, reference + 900, sizeof(buffer)) == 0 ? "PASS" : "FAIL");
+
+    // Seek backwards relative to the current position.
+    position = fat32_file_seek(&file, -1000, FAT32_SEEK_CUR);
+    bytes_read = fat32_file_read(&file, buffer, sizeof(buffer));
+
+    kprintf("SEEK_CUR: %s\n",
+            position == 412 && bytes_read == sizeof(buffer) &&
+            memcmp(buffer, reference + 412, sizeof(buffer)) == 0 ? "PASS" : "FAIL");
+
+    // Seek backwards from EOF.
+    position = fat32_file_seek(&file, -100, FAT32_SEEK_END);
+    bytes_read = fat32_file_read(&file, buffer, sizeof(buffer));
+
+    kprintf("SEEK_END: %s\n",
+            position == (int64_t)file.size - 100 && bytes_read == 100 &&
+            memcmp(buffer, reference + file.size - 100, 100) == 0 ? "PASS" : "FAIL");
+
+    // Seeking beyond EOF must not extend the file.
+    position = fat32_file_seek(&file, 100, FAT32_SEEK_END);
+    bytes_read = fat32_file_read(&file, buffer, sizeof(buffer));
+
+    kprintf("Beyond EOF: %s\n",
+            position == (int64_t)file.size + 100 && bytes_read == 0 ? "PASS" : "FAIL");
+
+    // Invalid seeks must preserve the existing file position.
+    uint64_t previous_position = file.position;
+
+    position = fat32_file_seek(&file, -1, FAT32_SEEK_SET);
+
+    kprintf("Negative position: %s\n",
+            position == -1 && file.position == previous_position ? "PASS" : "FAIL");
+
+    position = fat32_file_seek(&file, INT64_MAX, FAT32_SEEK_CUR);
+
+    kprintf("Integer overflow: %s\n",
+            position == -1 && file.position == previous_position ? "PASS" : "FAIL");
+
+    kfree(reference);
+    fat32_file_close(&file);
 }
 
 void kernel_main(void)

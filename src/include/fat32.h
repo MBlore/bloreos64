@@ -19,6 +19,7 @@
 #define _BLOREOS_FAT32_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #define FAT32_BOOT_SECTOR_SIZE 512
 #define FAT32_BOOT_SIGNATURE 0xAA55
@@ -88,6 +89,15 @@ typedef enum {
     FAT32_LOOKUP_NOT_FOUND,
     FAT32_LOOKUP_NOT_DIRECTORY
 } fat32_lookup_status_t;
+
+/*
+ * Defines the reference position used when seeking within a file.
+ */
+typedef enum {
+    FAT32_SEEK_SET = 0,    // Relative to the beginning of the file.
+    FAT32_SEEK_CUR = 1,    // Relative to the current file position.
+    FAT32_SEEK_END = 2     // Relative to the end of the file.
+} fat32_seek_mode_t;
 
 // FAT32 boot sector, including the BIOS Parameter Block.
 typedef struct __attribute__((packed)) {
@@ -260,5 +270,8 @@ fat32_lookup_status_t fat32_directory_find(const fat32_volume_t *volume, uint32_
 fat32_lookup_status_t fat32_path_resolve(const fat32_volume_t *volume, const char *path,
                                         fat32_directory_record_t *record);
 bool fat32_file_open(const fat32_volume_t *volume, const char *path, fat32_file_t *file);
+void fat32_file_close(fat32_file_t *file);
+int64_t fat32_file_read(fat32_file_t *file, void *buffer, size_t count);
+int64_t fat32_file_seek(fat32_file_t *file, int64_t offset, fat32_seek_mode_t mode);
 
 #endif
