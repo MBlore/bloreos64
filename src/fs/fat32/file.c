@@ -24,9 +24,11 @@
 #include <str.h>
 
 /*
- * Opens an existing file for reading.
+ * Opens an existing regular file.
  *
- * Resolves the absolute path and initialises an independent file handle.
+ * Resolves the absolute path and initialises an independent file handle,
+ * retaining the physical location of the file's directory entry.
+ *
  * The caller must provide an unopened file handle and ensure the volume
  * remains valid until the file is closed.
  *
@@ -69,11 +71,14 @@ bool fat32_file_open(const fat32_volume_t *volume, const char *path, fat32_file_
     }
 
     file->volume = volume;
+    file->directory_cluster = record.directory_cluster;
+    file->directory_index = record.directory_index;
     file->first_cluster = first_cluster;
     file->current_cluster = first_cluster;
     file->cluster_index = 0;
     file->size = record.entry.file_size;
     file->position = 0;
+    file->attributes = record.entry.attributes;
     file->buffer_valid = false;
 
     return true;
@@ -247,4 +252,227 @@ int64_t fat32_file_seek(fat32_file_t *file, int64_t offset, fat32_seek_mode_t mo
     file->position = (uint64_t)position;
 
     return position;
+}
+
+/*
+ * Writes data at the current file position, extending the file
+ * and its cluster chain when necessary.
+ *
+ * Returns the number of bytes written, or -1 on failure.
+ * Writes starting beyond the end of the file are not yet supported.
+ */
+int64_t fat32_file_write(fat32_file_t *file, const void *buffer, size_t count)
+{
+    if (file == NULL || file->volume == NULL) {
+        return -1;
+    }
+
+    if (file->attributes & FAT32_ATTR_READ_ONLY) {
+        return -1;
+    }
+
+    if (count == 0) {
+        return 0;
+    }
+
+    if (buffer == NULL || file->position > file->size) {
+        return -1;
+    }
+
+    // Prevent writes exceeding the maximum FAT32 file size.
+    if (file->position > UINT32_MAX || count > UINT32_MAX - file->position) {
+        return -1;
+    }
+
+    uint64_t end_position = file->position + count;
+
+    // Expand the cluster chain if the write extends the file.
+    if (end_position > file->size) {
+        if (!fat32_file_ensure_capacity(file, end_position)) {
+            return -1;
+        }
+    }
+
+    const uint8_t *source = buffer;
+    size_t bytes_written = 0;
+    uint32_t cluster_size = file->volume->bytes_per_cluster;
+
+    while (bytes_written < count) {
+        uint32_t cluster_index = file->position / cluster_size;
+        uint32_t cluster_offset = file->position % cluster_size;
+
+        if (!fat32_file_load_cluster(file, cluster_index)) {
+            break;
+        }
+
+        size_t chunk_size = cluster_size - cluster_offset;
+
+        if (chunk_size > count - bytes_written) {
+            chunk_size = count - bytes_written;
+        }
+
+        memcpy(file->buffer + cluster_offset, source + bytes_written, chunk_size);
+
+        if (!fat32_write_cluster(file->volume, file->current_cluster, file->buffer)) {
+            file->buffer_valid = false;
+            break;
+        }
+
+        bytes_written += chunk_size;
+        file->position += chunk_size;
+
+        // Increase the logical file size as data is written.
+        if (file->position > file->size) {
+            file->size = file->position;
+        }
+    }
+
+    if (bytes_written == 0) {
+        return -1;
+    }
+
+    // Persist the updated file size, first cluster and archive attribute.
+    if (!fat32_file_update_metadata(file)) {
+        return -1;
+    }
+
+    return (int64_t)bytes_written;
+}
+
+/*
+ * Synchronises an open file's metadata with its on-disk directory entry.
+ *
+ * Updates the file size, first cluster number and archive attribute,
+ * preserving all other directory entry fields.
+ *
+ * Returns true on success, or false on validation or I/O failure.
+ */
+bool fat32_file_update_metadata(fat32_file_t *file)
+{
+    if (file == NULL || file->volume == NULL) {
+        return false;
+    }
+
+    // FAT32 stores file sizes using an unsigned 32-bit integer.
+    if (file->size > UINT32_MAX) {
+        return false;
+    }
+
+    if (file->attributes & FAT32_ATTR_READ_ONLY) {
+        return false;
+    }
+
+    fat32_directory_entry_t entry;
+
+    if (!fat32_directory_read_entry(file->volume, file->directory_cluster,
+                                    file->directory_index, &entry)) {
+        return false;
+    }
+
+    // Ensure the entry represents an existing writable regular file.
+    if (entry.name[0] == FAT32_DIR_ENTRY_END ||
+        entry.name[0] == FAT32_DIR_ENTRY_DELETED ||
+        entry.attributes & (FAT32_ATTR_DIRECTORY | FAT32_ATTR_VOLUME_ID |
+                            FAT32_ATTR_READ_ONLY)) {
+        return false;
+    }
+
+    // Update the first cluster number and file size.
+    entry.first_cluster_high = (uint16_t)(file->first_cluster >> 16);
+    entry.first_cluster_low = (uint16_t)file->first_cluster;
+    entry.file_size = (uint32_t)file->size;
+
+    // Indicate that the file has been modified.
+    entry.attributes |= FAT32_ATTR_ARCHIVE;
+
+    if (!fat32_directory_write_entry(file->volume, file->directory_cluster,
+                                     file->directory_index, &entry)) {
+        return false;
+    }
+
+    file->attributes = entry.attributes;
+
+    return true;
+}
+
+/*
+ * Ensures that a file's cluster chain can accommodate the requested
+ * capacity in bytes.
+ *
+ * Allocates additional clusters when necessary, including the first
+ * cluster of an empty file.
+ *
+ * Does not modify the logical file size or persist directory metadata.
+ * Clusters allocated before a failure may remain allocated.
+ */
+bool fat32_file_ensure_capacity(fat32_file_t *file, uint64_t capacity)
+{
+    if (file == NULL || file->volume == NULL || capacity > UINT32_MAX) {
+        return false;
+    }
+
+    if (file->attributes & FAT32_ATTR_READ_ONLY) {
+        return false;
+    }
+
+    if (capacity == 0) {
+        return true;
+    }
+
+    const fat32_volume_t *volume = file->volume;
+    uint32_t cluster_size = volume->bytes_per_cluster;
+    uint32_t required = (capacity + cluster_size - 1) / cluster_size;
+
+    if (required > volume->cluster_count) {
+        return false;
+    }
+
+    // Allocate a cache buffer if the file was opened empty.
+    if (file->buffer == NULL) {
+        file->buffer = kalloc(cluster_size);
+
+        if (file->buffer == NULL) {
+            return false;
+        }
+
+        file->buffer_valid = false;
+    }
+
+    // Allocate the first cluster if the file has no cluster chain.
+    if (file->first_cluster == 0) {
+        uint32_t cluster;
+
+        if (!fat32_allocate_cluster(volume, &cluster)) {
+            return false;
+        }
+
+        file->first_cluster = cluster;
+        file->current_cluster = cluster;
+        file->cluster_index = 0;
+        file->buffer_valid = false;
+    }
+
+    uint32_t current = file->first_cluster;
+    uint32_t allocated = 1;
+
+    // Traverse existing clusters before allocating additional storage.
+    while (allocated < required) {
+        uint32_t next;
+        fat32_chain_status_t status = fat32_next_cluster(volume, current, &next);
+
+        if (status == FAT32_CHAIN_ERROR) {
+            return false;
+        }
+
+        if (status == FAT32_CHAIN_END) {
+            if (!fat32_extend_chain(volume, current, &next)) {
+                return false;
+            }
+        }
+
+        current = next;
+        allocated++;
+    }
+
+    return true;
 }

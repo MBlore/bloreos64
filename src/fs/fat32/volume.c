@@ -178,6 +178,8 @@ bool fat32_init_volume(partition_t *partition, fat32_volume_t *volume)
         volume->active_fat_sector = volume->first_fat_sector + active_fat * volume->sectors_per_fat;
     }
 
+    volume->fat_mirroring = !(boot_sector.extended_flags & FAT32_MIRRORING_DISABLED);
+
     // Initialise the data region geometry.
     volume->first_data_sector = volume->first_fat_sector +
                                 (volume->fat_count * volume->sectors_per_fat);

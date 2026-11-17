@@ -56,94 +56,94 @@ CQueue_t *q_keyboard;
 // See specification for further info.
 LIMINE_BASE_REVISION(1)
 
-void run_test(void)
+static void run_test(void)
 {
     partition_t *partition = partition_find("nvme0n2p1");
-
-    if (partition == NULL) {
-        kprintf("Partition not found\n");
-        return;
-    }
-
     fat32_volume_t volume;
+    fat32_file_t file;
 
-    if (!fat32_init_volume(partition, &volume)) {
+    if (partition == NULL || !fat32_init_volume(partition, &volume)) {
         kprintf("Failed to initialise FAT32 volume\n");
         return;
     }
 
-    fat32_file_t file;
-
-    if (!fat32_file_open(&volume, "/drivers/nvme/controller.c", &file)) {
+    if (!fat32_file_open(&volume, "/hello.txt", &file)) {
         kprintf("Failed to open file\n");
         return;
     }
 
-    // Load the complete file as a reference for random-access reads.
-    uint8_t *reference = kalloc(file.size);
+    const char original[] = "Hello Blore OS!";
+    const size_t original_size = sizeof(original) - 1;
+    const size_t append_size = 2500;
+    const size_t expected_size = original_size + append_size;
 
-    if (reference == NULL) {
+    if (file.size != original_size) {
+        kprintf("Unexpected original file size\n");
         fat32_file_close(&file);
         return;
     }
 
-    if (fat32_file_read(&file, reference, file.size) != (int64_t)file.size) {
-        kprintf("Failed to read reference data\n");
-        kfree(reference);
+    uint32_t first_cluster = file.first_cluster;
+
+    uint8_t *buffer = kalloc(expected_size);
+
+    if (buffer == NULL) {
         fat32_file_close(&file);
         return;
     }
 
-    uint8_t buffer[512];
-    int64_t position;
-    int64_t bytes_read;
+    // Generate a predictable repeating byte pattern.
+    for (size_t i = 0; i < append_size; i++) {
+        buffer[i] = (uint8_t)i;
+    }
 
-    // Seek forwards from the beginning of the file.
-    position = fat32_file_seek(&file, 900, FAT32_SEEK_SET);
-    bytes_read = fat32_file_read(&file, buffer, sizeof(buffer));
+    int64_t position = fat32_file_seek(&file, 0, FAT32_SEEK_END);
 
-    kprintf("SEEK_SET: %s\n",
-            position == 900 && bytes_read == sizeof(buffer) &&
-            memcmp(buffer, reference + 900, sizeof(buffer)) == 0 ? "PASS" : "FAIL");
+    kprintf("Seek to EOF: %s\n", position == original_size ? "PASS" : "FAIL");
 
-    // Seek backwards relative to the current position.
-    position = fat32_file_seek(&file, -1000, FAT32_SEEK_CUR);
-    bytes_read = fat32_file_read(&file, buffer, sizeof(buffer));
+    int64_t written = fat32_file_write(&file, buffer, append_size);
 
-    kprintf("SEEK_CUR: %s\n",
-            position == 412 && bytes_read == sizeof(buffer) &&
-            memcmp(buffer, reference + 412, sizeof(buffer)) == 0 ? "PASS" : "FAIL");
+    kprintf("Append across clusters: %s\n", written == append_size ? "PASS" : "FAIL");
+    kprintf("Updated file size: %s\n", file.size == expected_size ? "PASS" : "FAIL");
 
-    // Seek backwards from EOF.
-    position = fat32_file_seek(&file, -100, FAT32_SEEK_END);
-    bytes_read = fat32_file_read(&file, buffer, sizeof(buffer));
-
-    kprintf("SEEK_END: %s\n",
-            position == (int64_t)file.size - 100 && bytes_read == 100 &&
-            memcmp(buffer, reference + file.size - 100, 100) == 0 ? "PASS" : "FAIL");
-
-    // Seeking beyond EOF must not extend the file.
-    position = fat32_file_seek(&file, 100, FAT32_SEEK_END);
-    bytes_read = fat32_file_read(&file, buffer, sizeof(buffer));
-
-    kprintf("Beyond EOF: %s\n",
-            position == (int64_t)file.size + 100 && bytes_read == 0 ? "PASS" : "FAIL");
-
-    // Invalid seeks must preserve the existing file position.
-    uint64_t previous_position = file.position;
-
-    position = fat32_file_seek(&file, -1, FAT32_SEEK_SET);
-
-    kprintf("Negative position: %s\n",
-            position == -1 && file.position == previous_position ? "PASS" : "FAIL");
-
-    position = fat32_file_seek(&file, INT64_MAX, FAT32_SEEK_CUR);
-
-    kprintf("Integer overflow: %s\n",
-            position == -1 && file.position == previous_position ? "PASS" : "FAIL");
-
-    kfree(reference);
     fat32_file_close(&file);
+
+    if (!fat32_file_open(&volume, "/hello.txt", &file)) {
+        kprintf("Failed to reopen file\n");
+        kfree(buffer);
+        return;
+    }
+
+    kprintf("Persisted file size: %s\n", file.size == expected_size ? "PASS" : "FAIL");
+    kprintf("First cluster unchanged: %s\n",
+            file.first_cluster == first_cluster ? "PASS" : "FAIL");
+
+    memset(buffer, 0, expected_size);
+
+    int64_t bytes_read = fat32_file_read(&file, buffer, expected_size);
+
+    kprintf("Read entire file: %s\n", bytes_read == expected_size ? "PASS" : "FAIL");
+
+    bool original_valid = bytes_read == expected_size &&
+                          memcmp(buffer, original, original_size) == 0;
+
+    kprintf("Original data preserved: %s\n", original_valid ? "PASS" : "FAIL");
+
+    bool appended_valid = bytes_read == expected_size;
+
+    if (appended_valid) {
+        for (size_t i = 0; i < append_size; i++) {
+            if (buffer[original_size + i] != (uint8_t)i) {
+                appended_valid = false;
+                break;
+            }
+        }
+    }
+
+    kprintf("Appended data verified: %s\n", appended_valid ? "PASS" : "FAIL");
+
+    fat32_file_close(&file);
+    kfree(buffer);
 }
 
 void kernel_main(void)

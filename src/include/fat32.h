@@ -71,6 +71,8 @@
 
 #define FAT32_UTF8_NAME_BUFFER_SIZE (FAT32_LFN_MAX_LENGTH * 3 + 1)
 
+#define FAT32_CLUSTER_EOC 0x0FFFFFFF
+
 typedef enum {
     FAT32_CHAIN_ERROR,
     FAT32_CHAIN_NEXT,
@@ -158,6 +160,7 @@ typedef struct {
     uint32_t fat_count;
     uint32_t sectors_per_fat;
     uint32_t first_fat_sector;
+    bool fat_mirroring;         // Whether writes must update all FAT copies.
 
     // Data region geometry.
     uint32_t first_data_sector;
@@ -215,26 +218,37 @@ typedef struct __attribute__((packed)) {
 _Static_assert(sizeof(fat32_long_directory_entry_t) == FAT32_DIRECTORY_ENTRY_SIZE,
                "Invalid FAT32 long directory entry structure size");
 
+/*
+ * Represents a resolved directory entry and its location on disk.
+ *
+ * Synthetic records, such as the root directory, have no physical
+ * directory entry and therefore use a directory cluster of zero.
+ */
 typedef struct {
-    fat32_directory_entry_t entry;
-    char name[FAT32_UTF8_NAME_BUFFER_SIZE];
+    fat32_directory_entry_t entry;              // On-disk short directory entry.
+    char name[FAT32_UTF8_NAME_BUFFER_SIZE];     // Resolved UTF-8 filename.
+    uint32_t directory_cluster;                 // Cluster containing the directory entry.
+    uint32_t directory_index;                   // Zero-based entry index within the cluster.
 } fat32_directory_record_t;
 
 /*
  * Represents an open file on a FAT32 volume.
  *
- * Maintains the current file position, cluster chain traversal state
- * and a cached cluster buffer to reduce repeated disk reads.
+ * Maintains the current file position, directory entry location,
+ * cluster chain traversal state and cached cluster data.
  *
  * Each open file maintains its own independent state.
  */
 typedef struct {
     const fat32_volume_t *volume;    // Volume containing the file.
+    uint32_t directory_cluster;      // Cluster containing the directory entry.
+    uint32_t directory_index;        // Entry index within the directory cluster.
     uint32_t first_cluster;          // First cluster in the file's FAT chain.
     uint32_t current_cluster;        // Current cluster in the FAT chain.
     uint32_t cluster_index;          // Zero-based logical cluster index.
     uint64_t size;                   // Total file size in bytes.
     uint64_t position;               // Current file position in bytes.
+    uint8_t attributes;              // FAT32 directory entry attributes.
     uint8_t *buffer;                 // Allocated cluster cache buffer.
     bool buffer_valid;               // Indicates whether cached data is valid.
 } fat32_file_t;
@@ -243,8 +257,18 @@ bool fat32_read_boot_sector(partition_t *partition, fat32_boot_sector_t *boot_se
 bool fat32_validate_boot_sector(partition_t *partition, const fat32_boot_sector_t *boot_sector);
 bool fat32_init_volume(partition_t *partition, fat32_volume_t *volume);
 bool fat32_cluster_to_lba(const fat32_volume_t *volume, uint32_t cluster, uint64_t *lba);
+
 bool fat32_read_cluster(const fat32_volume_t *volume, uint32_t cluster, void *buffer);
+bool fat32_find_free_cluster(const fat32_volume_t *volume, uint32_t *cluster);
+bool fat32_write_cluster(const fat32_volume_t *volume, uint32_t cluster, const void *buffer);
+bool fat32_allocate_cluster(const fat32_volume_t *volume, uint32_t *cluster);
+bool fat32_release_cluster(const fat32_volume_t *volume, uint32_t cluster);
+
+bool fat32_extend_chain(const fat32_volume_t *volume, uint32_t tail, uint32_t *cluster);
+bool fat32_release_chain(const fat32_volume_t *volume, uint32_t first_cluster);
+
 bool fat32_read_fat_entry(const fat32_volume_t *volume, uint32_t cluster, uint32_t *entry);
+bool fat32_write_fat_entry(const fat32_volume_t *volume, uint32_t cluster, uint32_t entry);
 
 fat32_chain_status_t fat32_next_cluster(const fat32_volume_t *volume, uint32_t cluster,
                                        uint32_t *next_cluster);
@@ -256,6 +280,10 @@ bool fat32_directory_open(const fat32_volume_t *volume, uint32_t cluster,
                           fat32_directory_iterator_t *iterator);
 
 void fat32_directory_close(fat32_directory_iterator_t *iterator);
+bool fat32_directory_read_entry(const fat32_volume_t *volume, uint32_t cluster,
+                                uint32_t index, fat32_directory_entry_t *entry);
+bool fat32_directory_write_entry(const fat32_volume_t *volume, uint32_t cluster,
+                                 uint32_t index, const fat32_directory_entry_t *entry);
 
 fat32_directory_status_t fat32_directory_next(fat32_directory_iterator_t *iterator,
                                              fat32_directory_record_t *record);
@@ -273,5 +301,8 @@ bool fat32_file_open(const fat32_volume_t *volume, const char *path, fat32_file_
 void fat32_file_close(fat32_file_t *file);
 int64_t fat32_file_read(fat32_file_t *file, void *buffer, size_t count);
 int64_t fat32_file_seek(fat32_file_t *file, int64_t offset, fat32_seek_mode_t mode);
+int64_t fat32_file_write(fat32_file_t *file, const void *buffer, size_t count);
+bool fat32_file_update_metadata(fat32_file_t *file);
+bool fat32_file_ensure_capacity(fat32_file_t *file, uint64_t capacity);
 
 #endif

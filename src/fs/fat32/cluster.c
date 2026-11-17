@@ -65,6 +65,31 @@ bool fat32_read_cluster(const fat32_volume_t *volume, uint32_t cluster, void *bu
     return partition_read(volume->partition, lba, volume->sectors_per_cluster, buffer);
 }
 
+/*
+ * Writes an entire data cluster to the volume.
+ *
+ * The supplied buffer must contain at least bytes_per_cluster bytes.
+ * This operation does not modify the FAT or allocate a cluster.
+ *
+ * Returns true on success, or false on validation or I/O failure.
+ */
+bool fat32_write_cluster(const fat32_volume_t *volume, uint32_t cluster, const void *buffer)
+{
+    if (volume == NULL || buffer == NULL) {
+        return false;
+    }
+
+    uint64_t lba;
+
+    // Translate the cluster number into a partition-relative LBA.
+    if (!fat32_cluster_to_lba(volume, cluster, &lba)) {
+        return false;
+    }
+
+    // Write all sectors belonging to the cluster.
+    return partition_write(volume->partition, lba, volume->sectors_per_cluster, buffer);
+}
+
 bool fat32_read_fat_entry(const fat32_volume_t *volume, uint32_t cluster, uint32_t *entry)
 {
     if (volume == NULL || entry == NULL) {
@@ -96,6 +121,66 @@ bool fat32_read_fat_entry(const fat32_volume_t *volume, uint32_t cluster, uint32
     memcpy(&value, buffer + entry_offset, sizeof(value));
 
     *entry = value & FAT32_CLUSTER_MASK;
+
+    return true;
+}
+
+/*
+ * Updates a FAT entry.
+ *
+ * When FAT mirroring is enabled, all FAT copies are updated.
+ * Otherwise, only the active FAT is modified.
+ *
+ * Returns true on success, or false on validation or I/O failure.
+ */
+bool fat32_write_fat_entry(const fat32_volume_t *volume, uint32_t cluster, uint32_t entry)
+{
+    if (volume == NULL) {
+        return false;
+    }
+
+    // Ensure the target cluster exists within the data region.
+    if (cluster < FAT32_FIRST_DATA_CLUSTER ||
+        cluster - FAT32_FIRST_DATA_CLUSTER >= volume->cluster_count) {
+        return false;
+    }
+
+    // Reject values exceeding the 28-bit FAT entry range.
+    if (entry > FAT32_CLUSTER_MASK) {
+        return false;
+    }
+
+    uint64_t fat_offset = (uint64_t)cluster * FAT32_ENTRY_SIZE;
+    uint64_t sector_offset = fat_offset / volume->bytes_per_sector;
+    uint32_t entry_offset = fat_offset % volume->bytes_per_sector;
+
+    uint32_t first_sector = volume->fat_mirroring ?
+                            volume->first_fat_sector : volume->active_fat_sector;
+
+    uint32_t fat_count = volume->fat_mirroring ? volume->fat_count : 1;
+
+    uint8_t buffer[FAT32_BOOT_SECTOR_SIZE];
+
+    for (uint32_t i = 0; i < fat_count; i++) {
+        uint64_t fat_sector = first_sector + (uint64_t)i * volume->sectors_per_fat;
+        fat_sector += sector_offset;
+
+        if (!partition_read(volume->partition, fat_sector, 1, buffer)) {
+            return false;
+        }
+
+        // Preserve the upper four reserved bits of the existing entry.
+        uint32_t value;
+        memcpy(&value, buffer + entry_offset, sizeof(value));
+
+        value = (value & ~FAT32_CLUSTER_MASK) | entry;
+
+        memcpy(buffer + entry_offset, &value, sizeof(value));
+
+        if (!partition_write(volume->partition, fat_sector, 1, buffer)) {
+            return false;
+        }
+    }
 
     return true;
 }

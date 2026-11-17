@@ -172,7 +172,8 @@ fat32_directory_status_t fat32_directory_next(fat32_directory_iterator_t *iterat
         }
 
         fat32_directory_entry_t *entries = (fat32_directory_entry_t *)iterator->buffer;
-        fat32_directory_entry_t *current = &entries[iterator->entry_index++];
+        uint32_t entry_index = iterator->entry_index++;
+        fat32_directory_entry_t *current = &entries[entry_index];
 
         if (current->name[0] == FAT32_DIR_ENTRY_END) {
             iterator->finished = true;
@@ -198,6 +199,10 @@ fat32_directory_status_t fat32_directory_next(fat32_directory_iterator_t *iterat
         }
 
         record->entry = *current;
+
+        // Retain the physical location of the short directory entry.
+        record->directory_cluster = iterator->current_cluster;
+        record->directory_index = entry_index;
 
         // Prefer the long filename, falling back to the short filename.
         if (!fat32_format_long_name(&iterator->lfn, current, record->name)) {
@@ -245,4 +250,95 @@ fat32_lookup_status_t fat32_directory_find(const fat32_volume_t *volume, uint32_
     }
 
     return FAT32_LOOKUP_NOT_FOUND;
+}
+
+/*
+ * Reads a directory entry from its physical location on disk.
+ *
+ * The index identifies a zero-based directory entry within the
+ * supplied cluster.
+ *
+ * Returns true on success, or false on validation or I/O failure.
+ */
+bool fat32_directory_read_entry(const fat32_volume_t *volume, uint32_t cluster,
+                                uint32_t index, fat32_directory_entry_t *entry)
+{
+    if (volume == NULL || entry == NULL) {
+        return false;
+    }
+
+    // Ensure the directory entry index is within the cluster.
+    uint32_t entry_count = volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
+
+    if (index >= entry_count) {
+        return false;
+    }
+
+    uint8_t *buffer = kalloc(volume->bytes_per_cluster);
+
+    if (buffer == NULL) {
+        return false;
+    }
+
+    if (!fat32_read_cluster(volume, cluster, buffer)) {
+        kfree(buffer);
+        return false;
+    }
+
+    // Extract the requested directory entry.
+    uint32_t offset = index * FAT32_DIRECTORY_ENTRY_SIZE;
+
+    memcpy(entry, buffer + offset, FAT32_DIRECTORY_ENTRY_SIZE);
+
+    kfree(buffer);
+
+    return true;
+}
+
+/*
+ * Writes a short directory entry to its physical location on disk.
+ *
+ * Preserves all other directory entries within the containing cluster.
+ * The caller is responsible for providing a valid directory entry
+ * and ensuring that the target cluster belongs to a directory.
+ *
+ * Returns true on success, or false on validation or I/O failure.
+ */
+bool fat32_directory_write_entry(const fat32_volume_t *volume, uint32_t cluster,
+                                 uint32_t index, const fat32_directory_entry_t *entry)
+{
+    if (volume == NULL || entry == NULL) {
+        return false;
+    }
+
+    // Ensure the directory entry index is within the cluster.
+    uint32_t entry_count = volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
+
+    if (index >= entry_count) {
+        return false;
+    }
+
+    uint8_t *buffer = kalloc(volume->bytes_per_cluster);
+
+    if (buffer == NULL) {
+        return false;
+    }
+
+    // Read the existing directory cluster.
+    if (!fat32_read_cluster(volume, cluster, buffer)) {
+        kfree(buffer);
+        return false;
+    }
+
+    // Replace only the requested directory entry.
+    uint32_t offset = index * FAT32_DIRECTORY_ENTRY_SIZE;
+
+    memcpy(buffer + offset, entry, FAT32_DIRECTORY_ENTRY_SIZE);
+
+    // Persist the modified directory cluster.
+    bool success = fat32_write_cluster(volume, cluster, buffer);
+
+    kfree(buffer);
+
+    return success;
 }
