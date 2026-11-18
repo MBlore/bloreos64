@@ -101,16 +101,19 @@ bin/test_fat32_lfn: test_fat32_lfn.c $(UNITY_SRC) $(FAT32_LFN_SRC) $(FAT32_UNICO
 
 # FAT32 directory allocation and LFN writer tests.
 FAT32_DIRECTORY_SRC := ../src/fs/fat32/directory.c
+FAT32_FILE_SRC := ../src/fs/fat32/file.c
+FAT32_UNICODE_SRC := ../src/lib/unicode.c
 FAT32_DIRECTORY_MOCKS := mocks/mock_fat32_directory.c
 
 bin/test_fat32_directory: test_fat32_directory.c $(UNITY_SRC) \
                          $(FAT32_DIRECTORY_SRC) $(FAT32_LFN_SRC) \
-                         $(FAT32_DIRECTORY_MOCKS) \
-                         mocks/mock_fat32_directory.h
+                         $(FAT32_FILE_SRC) $(FAT32_UNICODE_SRC) \
+                         $(FAT32_DIRECTORY_MOCKS) mocks/mock_fat32_directory.h
 	mkdir -p bin
 	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
 		-ffunction-sections -fdata-sections \
 		$(UNITY_SRC) $(FAT32_DIRECTORY_SRC) $(FAT32_LFN_SRC) \
+		$(FAT32_FILE_SRC) $(FAT32_UNICODE_SRC) \
 		$(FAT32_DIRECTORY_MOCKS) $< \
 		-Wl,--gc-sections -o $@
 

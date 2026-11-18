@@ -209,3 +209,17 @@ bool fat32_write_cluster(const fat32_volume_t *volume,
 
     return true;
 }
+
+/*
+ * Simulates releasing a file's cluster chain.
+ *
+ * Directory-only tests do not need to modify the FAT. A separate
+ * integration test will verify actual cluster-chain release.
+ */
+bool fat32_release_chain(const fat32_volume_t *volume, uint32_t first_cluster)
+{
+    (void)volume;
+    (void)first_cluster;
+
+    return true;
+}

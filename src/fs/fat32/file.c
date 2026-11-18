@@ -478,14 +478,11 @@ bool fat32_file_ensure_capacity(fat32_file_t *file, uint64_t capacity)
 }
 
 
+
 /*
  * Creates an empty regular file in the FAT32 root directory.
  *
- * Supports ASCII 8.3 filenames only. The file initially has no
- * allocated data clusters and a size of zero.
- *
- * Returns false if the name is invalid, already exists, no suitable
- * directory slot is available, or disk I/O fails.
+ * The file initially has no allocated data clusters.
  */
 bool fat32_file_create(const fat32_volume_t *volume, const char *path)
 {
@@ -493,35 +490,69 @@ bool fat32_file_create(const fat32_volume_t *volume, const char *path)
         return false;
     }
 
-    // Only filenames directly within the root directory are supported.
+    // Creation in nested directories is not yet supported.
     const char *filename = path + 1;
 
     if (*filename == '\0') {
         return false;
     }
 
-    for (const char *cursor = filename; *cursor != '\0'; cursor++) {
-        if (*cursor == '/') {
+    uint16_t long_name[FAT32_LFN_MAX_LENGTH];
+    uint32_t name_length;
+
+    if (!fat32_filename_to_utf16(filename, long_name, &name_length)) {
+        return false;
+    }
+
+    // Reject an existing file or an error while searching the directory.
+    fat32_directory_record_t existing;
+
+    if (fat32_directory_find(volume, volume->root_cluster, filename, &existing) !=
+        FAT32_LOOKUP_NOT_FOUND) {
+        return false;
+    }
+
+    uint8_t short_name[FAT32_SHORT_NAME_LENGTH];
+    bool is_short_name = fat32_make_short_name(filename, short_name);
+
+    if (is_short_name) {
+        // An 8.3 name must not collide with an existing short alias.
+        if (fat32_directory_short_name_exists(volume, volume->root_cluster, short_name) !=
+            FAT32_SHORT_NAME_NOT_FOUND) {
+            return false;
+        }
+    } else {
+        if (!fat32_directory_find_short_alias(volume, volume->root_cluster,
+                                               filename, short_name)) {
             return false;
         }
     }
 
-    uint8_t short_name[FAT32_SHORT_NAME_LENGTH];
+    // Prepare the short entry shared by both filename formats.
+    fat32_directory_entry_t entry;
 
-    if (!fat32_make_short_name(filename, short_name)) {
-        return false;
+    memset(&entry, 0, sizeof(entry));
+    memcpy(entry.name, short_name, FAT32_SHORT_NAME_LENGTH);
+
+    entry.attributes = FAT32_ATTR_ARCHIVE;
+
+    if (!is_short_name) {
+        uint32_t lfn_entries =
+            (name_length + FAT32_LFN_CHARS_PER_ENTRY - 1) / FAT32_LFN_CHARS_PER_ENTRY;
+
+        uint32_t entry_cluster;
+        uint32_t entry_index;
+
+        if (!fat32_directory_find_free_entries(volume, volume->root_cluster, lfn_entries + 1,
+                                                &entry_cluster, &entry_index)) {
+            return false;
+        }
+
+        return fat32_directory_write_long_name(volume, entry_cluster, entry_index,
+                                               long_name, name_length, &entry);
     }
 
-    // Do not create a file if its name is already in use.
-    fat32_directory_record_t existing;
-
-    fat32_lookup_status_t lookup =
-        fat32_directory_find(volume, volume->root_cluster, filename, &existing);
-
-    if (lookup != FAT32_LOOKUP_NOT_FOUND) {
-        return false;
-    }
-
+    // Preserve the existing single-entry creation behaviour for 8.3 names.
     uint32_t entry_cluster;
     uint32_t entry_index;
 
@@ -536,7 +567,6 @@ bool fat32_file_create(const fat32_volume_t *volume, const char *path)
         return false;
     }
 
-    // Confirm that the slot is still available.
     if (previous.name[0] != FAT32_DIR_ENTRY_DELETED &&
         previous.name[0] != FAT32_DIR_ENTRY_END) {
         return false;
@@ -546,30 +576,17 @@ bool fat32_file_create(const fat32_volume_t *volume, const char *path)
         uint32_t entries_per_cluster =
             volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
 
-        // Preserve the end marker if another slot exists in this cluster.
-        // A completely full directory chain does not require a 0x00 marker.
         if (entry_index + 1 < entries_per_cluster) {
             fat32_directory_entry_t end_entry;
 
             memset(&end_entry, 0, sizeof(end_entry));
 
             if (!fat32_directory_write_entry(volume, entry_cluster,
-                                            entry_index + 1, &end_entry)) {
+                                             entry_index + 1, &end_entry)) {
                 return false;
             }
         }
     }
-
-    // Initialise the new file's short directory entry.
-    fat32_directory_entry_t entry;
-
-    memset(&entry, 0, sizeof(entry));
-    memcpy(entry.name, short_name, FAT32_SHORT_NAME_LENGTH);
-
-    entry.attributes = FAT32_ATTR_ARCHIVE;
-    entry.file_size = 0;
-    entry.first_cluster_high = 0;
-    entry.first_cluster_low = 0;
 
     return fat32_directory_write_entry(volume, entry_cluster, entry_index, &entry);
 }
@@ -578,16 +595,15 @@ bool fat32_file_create(const fat32_volume_t *volume, const char *path)
 /*
  * Deletes a regular file from the FAT32 root directory.
  *
- * Currently supports ASCII 8.3 filenames only. Directories,
- * read-only files and long filename entries are not supported.
+ * Supports both short 8.3 filenames and validated long filenames.
+ * Nested paths, directories and read-only files are not supported.
  *
- * Marks the directory entry as deleted before releasing the
- * file's cluster chain.
+ * Long filename entries are validated and deleted before the short
+ * entry because the LFN deletion helper requires an intact short entry.
  *
- * Returns false if validation or disk I/O fails.
- *
- * This operation is not atomic. A failure after marking the
- * directory entry deleted may leave allocated clusters orphaned.
+ * This operation is not atomic. A write failure may leave orphaned
+ * LFN entries or allocated clusters. The directory must not be
+ * modified concurrently during deletion.
  */
 bool fat32_file_delete(const fat32_volume_t *volume, const char *path)
 {
@@ -608,17 +624,10 @@ bool fat32_file_delete(const fat32_volume_t *volume, const char *path)
         }
     }
 
-    // Require a valid short filename for this initial implementation.
-    uint8_t short_name[FAT32_SHORT_NAME_LENGTH];
-
-    if (!fat32_make_short_name(filename, short_name)) {
-        return false;
-    }
-
     fat32_directory_record_t record;
 
-    if (fat32_directory_find(volume, volume->root_cluster,
-                             filename, &record) != FAT32_LOOKUP_FOUND) {
+    if (fat32_directory_find(volume, volume->root_cluster, filename, &record) !=
+        FAT32_LOOKUP_FOUND) {
         return false;
     }
 
@@ -628,10 +637,19 @@ bool fat32_file_delete(const fat32_volume_t *volume, const char *path)
         return false;
     }
 
-    // Ensure this is the actual short entry we intend to delete.
-    if (memcmp(record.entry.name, short_name,
-               FAT32_SHORT_NAME_LENGTH) != 0) {
-        return false;
+    // For short filenames, ensure the lookup resolved the intended short entry.
+    if (record.lfn_entry_count == 0) {
+        uint8_t short_name[FAT32_SHORT_NAME_LENGTH];
+
+        if (!fat32_make_short_name(filename, short_name) ||
+            memcmp(record.entry.name, short_name, FAT32_SHORT_NAME_LENGTH) != 0) {
+            return false;
+        }
+    } else {
+        // Verify the complete LFN sequence before modifying the directory.
+        if (!fat32_directory_validate_lfn(volume, volume->root_cluster, &record)) {
+            return false;
+        }
     }
 
     uint32_t first_cluster =
@@ -643,13 +661,31 @@ bool fat32_file_delete(const fat32_volume_t *volume, const char *path)
         return false;
     }
 
-    // Mark the directory entry as deleted.
-    fat32_directory_entry_t deleted_entry = record.entry;
+    // Reject an invalid starting cluster before changing directory entries.
+    if (first_cluster != 0 &&
+        (first_cluster < FAT32_FIRST_DATA_CLUSTER ||
+         first_cluster >= volume->cluster_count + FAT32_FIRST_DATA_CLUSTER)) {
+        return false;
+    }
 
+    // Remove validated LFN entries while the associated short entry still exists.
+    if (record.lfn_entry_count != 0) {
+        if (!fat32_directory_delete_lfn(volume, volume->root_cluster, &record)) {
+            return false;
+        }
+    }
+
+    // Mark the short entry deleted so the file is no longer visible.
+    fat32_directory_entry_t deleted_entry = record.entry;
     deleted_entry.name[0] = FAT32_DIR_ENTRY_DELETED;
 
     if (!fat32_directory_write_entry(volume, record.directory_cluster,
                                      record.directory_index, &deleted_entry)) {
+        // The short entry remains intact, so restore its associated LFN entries.
+        if (record.lfn_entry_count != 0) {
+            fat32_directory_restore_lfn(volume, volume->root_cluster, &record);
+        }
+
         return false;
     }
 
@@ -662,4 +698,5 @@ bool fat32_file_delete(const fat32_volume_t *volume, const char *path)
 
     return true;
 }
+
 

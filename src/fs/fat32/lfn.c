@@ -210,3 +210,57 @@ bool fat32_lfn_make_entry(const uint16_t *name, uint32_t name_length,
 
     return true;
 }
+
+
+
+/*
+ * Converts an ASCII filename into UTF-16 code units for FAT32 LFN entries.
+ *
+ * Rejects control characters, non-ASCII bytes, path separators, FAT32-invalid
+ * filename characters, trailing spaces or dots, and reserved dot names.
+ *
+ * The output is not null-terminated. The length is measured in UTF-16
+ * code units and is only updated after successful validation.
+ */
+bool fat32_filename_to_utf16(const char *filename, uint16_t *output, uint32_t *length)
+{
+    if (filename == NULL || output == NULL || length == NULL) {
+        return false;
+    }
+
+    uint32_t count = 0;
+
+    for (const uint8_t *cursor = (const uint8_t *)filename; *cursor != '\0'; cursor++) {
+        uint8_t character = *cursor;
+
+        if (character < 0x20 || character > 0x7E ||
+            character == '/' || character == '\\' || character == ':' ||
+            character == '*' || character == '?' || character == '"' ||
+            character == '<' || character == '>' || character == '|') {
+            return false;
+        }
+
+        if (count >= FAT32_LFN_MAX_LENGTH) {
+            return false;
+        }
+
+        output[count++] = (uint16_t)character;
+    }
+
+    if (count == 0) {
+        return false;
+    }
+
+    // Reject dot-only names and trailing spaces or dots.
+    if ((count == 1 && filename[0] == '.') ||
+        (count == 2 && filename[0] == '.' && filename[1] == '.') ||
+        filename[count - 1] == '.' || filename[count - 1] == ' ') {
+        return false;
+    }
+
+    *length = count;
+
+    return true;
+}
+
+

@@ -402,8 +402,12 @@ fat32_directory_status_t fat32_directory_next(fat32_directory_iterator_t *iterat
         record->directory_cluster = iterator->current_cluster;
         record->directory_index = entry_index;
 
-        // Prefer the long filename, falling back to the short filename.
-        if (!fat32_format_long_name(&iterator->lfn, current, record->name)) {
+        // Only associate LFN entries with the file when the complete sequence is valid.
+        record->lfn_entry_count = 0;
+
+        if (fat32_format_long_name(&iterator->lfn, current, record->name)) {
+            record->lfn_entry_count = iterator->lfn.entry_count;
+        } else {
             fat32_format_short_name(current, record->name);
         }
 
@@ -1093,3 +1097,339 @@ bool fat32_directory_find_short_alias(
 }
 
 
+/*
+ * Locates the first LFN entry associated with a resolved directory record.
+ *
+ * Returns false for records without LFN entries or on traversal errors.
+ */
+bool fat32_directory_find_lfn_start(const fat32_volume_t *volume, uint32_t directory_cluster,
+                                   const fat32_directory_record_t *record,
+                                   uint32_t *start_cluster, uint32_t *start_index)
+{
+    if (volume == NULL || record == NULL || start_cluster == NULL || start_index == NULL ||
+        directory_cluster < FAT32_FIRST_DATA_CLUSTER || record->lfn_entry_count == 0 ||
+        record->lfn_entry_count > FAT32_LFN_MAX_ENTRIES) {
+        return false;
+    }
+
+    uint32_t entries_per_cluster = volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
+
+    if (entries_per_cluster == 0 || record->directory_index >= entries_per_cluster ||
+        volume->cluster_count == 0) {
+        return false;
+    }
+
+    // Retain the most recent 20 directory-entry positions.
+    uint32_t history_clusters[FAT32_LFN_MAX_ENTRIES];
+    uint32_t history_indices[FAT32_LFN_MAX_ENTRIES];
+    uint32_t positions_seen = 0;
+
+    uint32_t current_cluster = directory_cluster;
+
+    for (uint32_t clusters_visited = 0; clusters_visited < volume->cluster_count;
+         clusters_visited++) {
+        for (uint32_t index = 0; index < entries_per_cluster; index++) {
+            // The history now contains the entries immediately before the short entry.
+            if (current_cluster == record->directory_cluster &&
+                index == record->directory_index) {
+                if (positions_seen < record->lfn_entry_count) {
+                    return false;
+                }
+
+                uint32_t oldest = (positions_seen - record->lfn_entry_count) %
+                                  FAT32_LFN_MAX_ENTRIES;
+
+                *start_cluster = history_clusters[oldest];
+                *start_index = history_indices[oldest];
+
+                return true;
+            }
+
+            uint32_t slot = positions_seen % FAT32_LFN_MAX_ENTRIES;
+
+            history_clusters[slot] = current_cluster;
+            history_indices[slot] = index;
+            positions_seen++;
+        }
+
+        uint32_t next_cluster;
+        fat32_chain_status_t status = fat32_next_cluster(volume, current_cluster, &next_cluster);
+
+        if (status != FAT32_CHAIN_NEXT) {
+            return false;
+        }
+
+        current_cluster = next_cluster;
+    }
+
+    return false;
+}
+
+/*
+ * Validates the LFN entries associated with a directory record.
+ *
+ * Confirms that the short entry is unchanged and that each preceding
+ * LFN entry has the expected order, attributes and checksum.
+ */
+bool fat32_directory_validate_lfn(const fat32_volume_t *volume, uint32_t directory_cluster,
+                                  const fat32_directory_record_t *record)
+{
+    if (volume == NULL || record == NULL || record->lfn_entry_count == 0 ||
+        record->lfn_entry_count > FAT32_LFN_MAX_ENTRIES) {
+        return false;
+    }
+
+    uint32_t start_cluster;
+    uint32_t start_index;
+
+    if (!fat32_directory_find_lfn_start(volume, directory_cluster, record,
+                                        &start_cluster, &start_index)) {
+        return false;
+    }
+
+    // Ensure the short entry has not changed since the original lookup.
+    fat32_directory_entry_t current_short;
+
+    if (!fat32_directory_read_entry(volume, record->directory_cluster,
+                                   record->directory_index, &current_short)) {
+        return false;
+    }
+
+    if (memcmp(&current_short, &record->entry, sizeof(current_short)) != 0) {
+        return false;
+    }
+
+    uint8_t checksum = fat32_lfn_checksum(record->entry.name);
+    uint32_t current_cluster = start_cluster;
+    uint32_t current_index = start_index;
+    uint32_t entries_per_cluster = volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
+
+    if (entries_per_cluster == 0) {
+        return false;
+    }
+
+    // Reconstruct the filename independently from the current on-disk entries.
+    fat32_lfn_state_t lfn_state;
+    memset(&lfn_state, 0, sizeof(lfn_state));
+
+    for (uint32_t i = 0; i < record->lfn_entry_count; i++) {
+        fat32_long_directory_entry_t entry;
+
+        if (!fat32_directory_read_entry(volume, current_cluster, current_index,
+                                        (fat32_directory_entry_t *)&entry)) {
+            return false;
+        }
+
+        uint8_t expected_order = (uint8_t)(record->lfn_entry_count - i);
+
+        if (i == 0) {
+            expected_order |= FAT32_LFN_LAST_ENTRY;
+        }
+
+        if (entry.order != expected_order || entry.attributes != FAT32_ATTR_LONG_NAME ||
+            entry.checksum != checksum || entry.type != 0 || entry.first_cluster_low != 0) {
+            return false;
+        }
+
+        // Construct the filename.
+        fat32_lfn_process(&lfn_state, &entry);
+
+        if (!lfn_state.active) {
+            return false;
+        }
+
+        current_index++;
+
+        if (current_index == entries_per_cluster && i + 1 < record->lfn_entry_count) {
+            uint32_t next_cluster;
+
+            if (fat32_next_cluster(volume, current_cluster, &next_cluster) !=
+                FAT32_CHAIN_NEXT) {
+                return false;
+            }
+
+            current_cluster = next_cluster;
+            current_index = 0;
+        }
+    }
+
+    // Verify that the reconstructed filename still matches the original lookup.
+    char current_name[FAT32_UTF8_NAME_BUFFER_SIZE];
+
+    if (!fat32_format_long_name(&lfn_state, &current_short, current_name)) {
+        return false;
+    }
+
+    if (strcmp(current_name, record->name) != 0) {
+        return false;
+    }
+
+    // The validated LFN sequence must end immediately before its short entry.
+    if (current_index == entries_per_cluster) {
+        uint32_t next_cluster;
+
+        if (fat32_next_cluster(volume, current_cluster, &next_cluster) != FAT32_CHAIN_NEXT) {
+            return false;
+        }
+
+        current_cluster = next_cluster;
+        current_index = 0;
+    }
+
+    return current_cluster == record->directory_cluster &&
+           current_index == record->directory_index;
+}
+
+/*
+ * Deletes the validated LFN entries associated with a directory record.
+ *
+ * Saves the original entries before modifying them so a failed write
+ * can trigger a best-effort rollback.
+ */
+bool fat32_directory_delete_lfn(const fat32_volume_t *volume, uint32_t directory_cluster,
+                                const fat32_directory_record_t *record)
+{
+    if (volume == NULL || record == NULL || record->lfn_entry_count == 0 ||
+        record->lfn_entry_count > FAT32_LFN_MAX_ENTRIES) {
+        return false;
+    }
+
+    // Validate the complete sequence before making any modifications.
+    if (!fat32_directory_validate_lfn(volume, directory_cluster, record)) {
+        return false;
+    }
+
+    uint32_t current_cluster;
+    uint32_t current_index;
+
+    if (!fat32_directory_find_lfn_start(volume, directory_cluster, record,
+                                        &current_cluster, &current_index)) {
+        return false;
+    }
+
+    uint32_t entries_per_cluster = volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
+
+    if (entries_per_cluster == 0) {
+        return false;
+    }
+
+    // Save all original entries and their physical locations.
+    fat32_directory_entry_t originals[FAT32_LFN_MAX_ENTRIES];
+    uint32_t clusters[FAT32_LFN_MAX_ENTRIES];
+    uint32_t indices[FAT32_LFN_MAX_ENTRIES];
+
+    for (uint32_t i = 0; i < record->lfn_entry_count; i++) {
+        clusters[i] = current_cluster;
+        indices[i] = current_index;
+
+        if (!fat32_directory_read_entry(volume, current_cluster, current_index, &originals[i])) {
+            return false;
+        }
+
+        current_index++;
+
+        if (current_index == entries_per_cluster && i + 1 < record->lfn_entry_count) {
+            uint32_t next_cluster;
+
+            if (fat32_next_cluster(volume, current_cluster, &next_cluster) != FAT32_CHAIN_NEXT) {
+                return false;
+            }
+
+            current_cluster = next_cluster;
+            current_index = 0;
+        }
+    }
+
+    // Mark each LFN entry deleted, retaining originals for rollback.
+    for (uint32_t i = 0; i < record->lfn_entry_count; i++) {
+        fat32_directory_entry_t deleted = originals[i];
+        deleted.name[0] = FAT32_DIR_ENTRY_DELETED;
+
+        if (!fat32_directory_write_entry(volume, clusters[i], indices[i], &deleted)) {
+            // Restore all entries that were successfully modified.
+            for (uint32_t j = 0; j < i; j++) {
+                fat32_directory_write_entry(volume, clusters[j], indices[j], &originals[j]);
+            }
+
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/*
+ * Restores the LFN directory entries associated with a previously
+ * resolved record after an interrupted deletion.
+ *
+ * Reconstructs the entries from the original filename and short-entry
+ * checksum. Currently supports filenames accepted by the ASCII-only
+ * FAT32 filename encoder.
+ */
+bool fat32_directory_restore_lfn(const fat32_volume_t *volume, uint32_t directory_cluster,
+                                 const fat32_directory_record_t *record)
+{
+    if (volume == NULL || record == NULL || record->lfn_entry_count == 0 ||
+        record->lfn_entry_count > FAT32_LFN_MAX_ENTRIES) {
+        return false;
+    }
+
+    uint16_t name[FAT32_LFN_MAX_LENGTH];
+    uint32_t name_length;
+
+    if (!fat32_filename_to_utf16(record->name, name, &name_length)) {
+        return false;
+    }
+
+    uint32_t expected_count =
+        (name_length + FAT32_LFN_CHARS_PER_ENTRY - 1) / FAT32_LFN_CHARS_PER_ENTRY;
+
+    if (expected_count != record->lfn_entry_count) {
+        return false;
+    }
+
+    uint32_t current_cluster;
+    uint32_t current_index;
+
+    if (!fat32_directory_find_lfn_start(volume, directory_cluster, record,
+                                        &current_cluster, &current_index)) {
+        return false;
+    }
+
+    uint32_t entries_per_cluster = volume->bytes_per_cluster / FAT32_DIRECTORY_ENTRY_SIZE;
+
+    if (entries_per_cluster == 0) {
+        return false;
+    }
+
+    uint8_t checksum = fat32_lfn_checksum(record->entry.name);
+
+    for (uint32_t i = 0; i < record->lfn_entry_count; i++) {
+        uint8_t order = (uint8_t)(record->lfn_entry_count - i);
+        fat32_long_directory_entry_t entry;
+
+        if (!fat32_lfn_make_entry(name, name_length, order, checksum, &entry)) {
+            return false;
+        }
+
+        if (!fat32_directory_write_entry(volume, current_cluster, current_index,
+                                         (const fat32_directory_entry_t *)&entry)) {
+            return false;
+        }
+
+        current_index++;
+
+        if (current_index == entries_per_cluster && i + 1 < record->lfn_entry_count) {
+            uint32_t next_cluster;
+
+            if (fat32_next_cluster(volume, current_cluster, &next_cluster) != FAT32_CHAIN_NEXT) {
+                return false;
+            }
+
+            current_cluster = next_cluster;
+            current_index = 0;
+        }
+    }
+
+    return true;
+}

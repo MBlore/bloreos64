@@ -378,7 +378,6 @@ void test_write_lfn_failure_does_not_publish_short_entry(void)
     TEST_ASSERT_EQUAL_UINT32(4, mock_fat32_write_count());
 }
 
-
 /*
  * Verifies that failure on the second LFN write restores
  * all modified directory entries to their original contents.
@@ -423,7 +422,6 @@ void test_lfn_rollback_restores_written_entries(void)
         TEST_ASSERT_EQUAL_MEMORY(&original[i], &actual, sizeof(actual));
     }
 }
-
 
 /*
  * Verifies that a failed short-entry write restores the entire
@@ -471,7 +469,6 @@ void test_lfn_rollback_on_short_entry_failure(void)
     // Three writes attempted, followed by three rollback writes.
     TEST_ASSERT_EQUAL_UINT32(6, mock_fat32_write_count());
 }
-
 
 /*
  * Verifies that rollback restores the original directory end marker
@@ -525,7 +522,6 @@ void test_lfn_rollback_restores_end_marker(void)
     TEST_ASSERT_EQUAL_UINT32(4, mock_fat32_write_count());
 }
 
-
 /*
  * Verifies that a long filename produces the expected numbered
  * FAT32 short-name alias.
@@ -547,7 +543,6 @@ void test_make_short_alias_basic(void)
     TEST_ASSERT_EQUAL_MEMORY(
         "MYFIRS~2TXT", alias, FAT32_SHORT_NAME_LENGTH);
 }
-
 
 /*
  * Verifies that the alias formatter adjusts the base length
@@ -575,7 +570,6 @@ void test_make_short_alias_large_sequences(void)
     TEST_ASSERT_EQUAL_MEMORY(
         "M~999999TXT", alias, FAT32_SHORT_NAME_LENGTH);
 }
-
 
 /*
  * Verifies that invalid filenames and sequence numbers are rejected
@@ -617,8 +611,6 @@ void test_make_short_alias_invalid_inputs(void)
         "MYDOCU~1   ", alias, FAT32_SHORT_NAME_LENGTH);
 }
 
-
-
 /*
  * Verifies that an existing short-name alias is detected
  * and a different alias is reported as available.
@@ -654,7 +646,6 @@ void test_short_alias_collision_detection(void)
             &volume, TEST_FIRST_CLUSTER, different_alias));
 }
 
-
 /*
  * Verifies that a directory read failure is reported as an error,
  * rather than incorrectly indicating that an alias is available.
@@ -676,7 +667,6 @@ void test_short_alias_collision_read_failure(void)
         fat32_directory_short_name_exists(
             &volume, TEST_FIRST_CLUSTER, alias));
 }
-
 
 /*
  * Verifies that alias selection skips an occupied short name
@@ -710,7 +700,6 @@ void test_find_short_alias_skips_collision(void)
         "MYFIRS~2TXT", selected_alias, FAT32_SHORT_NAME_LENGTH);
 }
 
-
 /*
  * Verifies that alias selection aborts when the directory cannot
  * be read, rather than treating the error as an available alias.
@@ -729,6 +718,916 @@ void test_find_short_alias_read_failure(void)
         "My First Document.txt", selected_alias));
 }
 
+/*
+ * Verifies that the allocator begins at the directory end marker,
+ * rather than selecting stale entries beyond it.
+ */
+void test_find_free_entries_starts_at_end_marker(void)
+{
+    // Slot 0 is occupied.
+    // Slot 1 is the logical end of the directory.
+    // Slots 2 and 3 contain stale data.
+    fill_cluster(TEST_FIRST_CLUSTER, TEST_OCCUPIED_MARKER);
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER, 1, FAT32_DIR_ENTRY_END);
+
+    uint32_t entry_cluster = 0;
+    uint32_t entry_index = 0;
+
+    // An LFN entry and its short-name entry require two slots.
+    TEST_ASSERT_TRUE(fat32_directory_find_free_entries(
+        &volume, TEST_FIRST_CLUSTER, 2, &entry_cluster, &entry_index));
+
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER, entry_cluster);
+    TEST_ASSERT_EQUAL_UINT32(1, entry_index);
+}
+
+/*
+ * Verifies that an LFN sequence can replace the directory end
+ * marker and that a new end marker follows the created file.
+ */
+void test_write_lfn_replaces_end_marker(void)
+{
+    const uint16_t name[] = { 'T', 'e', 's', 't' };
+
+    fat32_directory_entry_t short_entry = {0};
+    memcpy(short_entry.name, "TEST~1  TXT", FAT32_SHORT_NAME_LENGTH);
+    short_entry.attributes = FAT32_ATTR_ARCHIVE;
+
+    // Slot 0 is occupied, slot 1 is the end marker,
+    // and slots 2 and 3 contain stale directory data.
+    fill_cluster(TEST_FIRST_CLUSTER, TEST_OCCUPIED_MARKER);
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER, 1, FAT32_DIR_ENTRY_END);
+
+    uint32_t entry_cluster;
+    uint32_t entry_index;
+
+    TEST_ASSERT_TRUE(fat32_directory_find_free_entries(
+        &volume, TEST_FIRST_CLUSTER, 2, &entry_cluster, &entry_index));
+
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER, entry_cluster);
+    TEST_ASSERT_EQUAL_UINT32(1, entry_index);
+
+    TEST_ASSERT_TRUE(fat32_directory_write_long_name(
+        &volume, entry_cluster, entry_index, name, 4, &short_entry));
+
+    fat32_directory_entry_t lfn_entry;
+    fat32_directory_entry_t actual_short;
+    fat32_directory_entry_t end_entry;
+
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(
+        TEST_FIRST_CLUSTER, 1, &lfn_entry));
+
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(
+        TEST_FIRST_CLUSTER, 2, &actual_short));
+
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(
+        TEST_FIRST_CLUSTER, 3, &end_entry));
+
+    TEST_ASSERT_EQUAL_HEX8(FAT32_ATTR_LONG_NAME, lfn_entry.attributes);
+
+    TEST_ASSERT_EQUAL_MEMORY(
+        short_entry.name, actual_short.name, FAT32_SHORT_NAME_LENGTH);
+
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_END, end_entry.name[0]);
+}
+
+/*
+ * Verifies that an LFN sequence can use deleted entries
+ * immediately before the end-of-directory marker.
+ *
+ * The existing end marker must remain in place when the
+ * allocated sequence does not consume it.
+ */
+void test_write_lfn_before_end_marker(void)
+{
+    const uint16_t name[] = { 'T', 'e', 's', 't' };
+
+    fat32_directory_entry_t short_entry = {0};
+    memcpy(short_entry.name, "TEST~1  TXT", FAT32_SHORT_NAME_LENGTH);
+    short_entry.attributes = FAT32_ATTR_ARCHIVE;
+
+    // Slots 0 and 1 are deleted; slot 2 ends the directory.
+    // Slot 3 contains stale data.
+    fill_cluster(TEST_FIRST_CLUSTER, TEST_OCCUPIED_MARKER);
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER, 0, FAT32_DIR_ENTRY_DELETED);
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER, 1, FAT32_DIR_ENTRY_DELETED);
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER, 2, FAT32_DIR_ENTRY_END);
+
+    uint32_t entry_cluster;
+    uint32_t entry_index;
+
+    TEST_ASSERT_TRUE(fat32_directory_find_free_entries(
+        &volume, TEST_FIRST_CLUSTER, 2, &entry_cluster, &entry_index));
+
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER, entry_cluster);
+    TEST_ASSERT_EQUAL_UINT32(0, entry_index);
+
+    TEST_ASSERT_TRUE(fat32_directory_write_long_name(
+        &volume, entry_cluster, entry_index, name, 4, &short_entry));
+
+    fat32_directory_entry_t lfn_entry;
+    fat32_directory_entry_t actual_short;
+    fat32_directory_entry_t end_entry;
+
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(
+        TEST_FIRST_CLUSTER, 0, &lfn_entry));
+
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(
+        TEST_FIRST_CLUSTER, 1, &actual_short));
+
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(
+        TEST_FIRST_CLUSTER, 2, &end_entry));
+
+    TEST_ASSERT_EQUAL_HEX8(FAT32_ATTR_LONG_NAME, lfn_entry.attributes);
+
+    TEST_ASSERT_EQUAL_MEMORY(
+        short_entry.name, actual_short.name, FAT32_SHORT_NAME_LENGTH);
+
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_END, end_entry.name[0]);
+}
+
+/*
+ * Verifies that an ASCII filename is converted into the UTF-16
+ * code units required by FAT32 long filename entries.
+ */
+void test_filename_to_utf16(void)
+{
+    const char *filename = "My First Document.txt";
+    const uint16_t expected[] = {
+        'M', 'y', ' ', 'F', 'i', 'r', 's', 't', ' ', 'D', 'o',
+        'c', 'u', 'm', 'e', 'n', 't', '.', 't', 'x', 't'
+    };
+
+    uint16_t output[FAT32_LFN_MAX_LENGTH] = {0};
+    uint32_t length = 0;
+
+    TEST_ASSERT_TRUE(fat32_filename_to_utf16(filename, output, &length));
+
+    TEST_ASSERT_EQUAL_UINT32(sizeof(expected) / sizeof(expected[0]), length);
+    TEST_ASSERT_EQUAL_UINT16_ARRAY(expected, output, length);
+}
+
+/*
+ * Verifies that ASCII-to-UTF-16 conversion rejects unsupported characters
+ * and filenames exceeding FAT32's maximum long filename length.
+ */
+void test_filename_to_utf16_invalid_inputs(void)
+{
+    uint16_t output[FAT32_LFN_MAX_LENGTH] = {0};
+    uint32_t length = 0;
+
+    TEST_ASSERT_FALSE(fat32_filename_to_utf16(NULL, output, &length));
+    TEST_ASSERT_FALSE(fat32_filename_to_utf16("", output, &length));
+    TEST_ASSERT_FALSE(fat32_filename_to_utf16("Test/File.txt", output, &length));
+    TEST_ASSERT_FALSE(fat32_filename_to_utf16("Test\\File.txt", output, &length));
+    TEST_ASSERT_FALSE(fat32_filename_to_utf16("Test\nFile.txt", output, &length));
+    TEST_ASSERT_FALSE(fat32_filename_to_utf16("Caf\xC3\xA9.txt", output, &length));
+    TEST_ASSERT_FALSE(fat32_filename_to_utf16("Test.txt", NULL, &length));
+    TEST_ASSERT_FALSE(fat32_filename_to_utf16("Test.txt", output, NULL));
+
+    // Exactly 255 characters is permitted by this conversion function.
+    char maximum_name[FAT32_LFN_MAX_LENGTH + 1];
+
+    for (uint32_t i = 0; i < FAT32_LFN_MAX_LENGTH; i++) {
+        maximum_name[i] = 'A';
+    }
+
+    maximum_name[FAT32_LFN_MAX_LENGTH] = '\0';
+
+    TEST_ASSERT_TRUE(fat32_filename_to_utf16(maximum_name, output, &length));
+    TEST_ASSERT_EQUAL_UINT32(FAT32_LFN_MAX_LENGTH, length);
+
+    // One additional character must be rejected.
+    char oversized_name[FAT32_LFN_MAX_LENGTH + 2];
+
+    for (uint32_t i = 0; i < FAT32_LFN_MAX_LENGTH + 1; i++) {
+        oversized_name[i] = 'A';
+    }
+
+    oversized_name[FAT32_LFN_MAX_LENGTH + 1] = '\0';
+
+    TEST_ASSERT_FALSE(fat32_filename_to_utf16(oversized_name, output, &length));
+}
+
+/*
+ * Verifies that FAT32-invalid filename characters and trailing
+ * spaces or dots are rejected during UTF-16 conversion.
+ */
+void test_filename_to_utf16_rejects_invalid_names(void)
+{
+    uint16_t output[FAT32_LFN_MAX_LENGTH];
+    uint32_t length = 0;
+
+    const char *invalid_names[] = {
+        "File:Name.txt",
+        "File*Name.txt",
+        "File?Name.txt",
+        "File\"Name.txt",
+        "File<Name.txt",
+        "File>Name.txt",
+        "File|Name.txt",
+        "File.txt.",
+        "File.txt ",
+        ".",
+        ".."
+    };
+
+    for (uint32_t i = 0; i < sizeof(invalid_names) / sizeof(invalid_names[0]); i++) {
+        TEST_ASSERT_FALSE(fat32_filename_to_utf16(invalid_names[i], output, &length));
+    }
+
+    // Spaces and dots within a filename remain valid.
+    TEST_ASSERT_TRUE(fat32_filename_to_utf16("My Document.v2.txt", output, &length));
+    TEST_ASSERT_EQUAL_UINT32(18, length);
+}
+
+/*
+ * Verifies that creating a long-named file writes its LFN entries
+ * followed by a short directory entry containing a unique alias.
+ */
+void test_file_create_long_filename(void)
+{
+    const char *filename = "My First Document.txt";
+
+    fat32_directory_entry_t first;
+    fat32_directory_entry_t second;
+    fat32_directory_entry_t short_entry;
+
+    // An empty directory starts with the end-of-directory marker.
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    // The 21-character filename requires two LFN entries.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 0, &first));
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 1, &second));
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 2, &short_entry));
+
+    TEST_ASSERT_EQUAL_HEX8(FAT32_ATTR_LONG_NAME, first.attributes);
+    TEST_ASSERT_EQUAL_HEX8(FAT32_ATTR_LONG_NAME, second.attributes);
+
+    // The first on-disk LFN entry carries the LAST_ENTRY flag.
+    TEST_ASSERT_EQUAL_HEX8(0x42, first.name[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x01, second.name[0]);
+
+    TEST_ASSERT_EQUAL_MEMORY("MYFIRS~1TXT", short_entry.name, FAT32_SHORT_NAME_LENGTH);
+    TEST_ASSERT_EQUAL_HEX8(FAT32_ATTR_ARCHIVE, short_entry.attributes);
+    TEST_ASSERT_EQUAL_UINT32(0, short_entry.file_size);
+
+    // Both LFN entries must reference the same short filename.
+    const fat32_long_directory_entry_t *lfn_first =
+        (const fat32_long_directory_entry_t *)&first;
+
+    const fat32_long_directory_entry_t *lfn_second =
+        (const fat32_long_directory_entry_t *)&second;
+
+    uint8_t checksum = fat32_lfn_checksum(short_entry.name);
+
+    TEST_ASSERT_EQUAL_HEX8(checksum, lfn_first->checksum);
+    TEST_ASSERT_EQUAL_HEX8(checksum, lfn_second->checksum);
+
+    // Confirm that the original filename can be found by directory lookup.
+    fat32_directory_record_t record;
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster, filename, &record));
+
+    TEST_ASSERT_EQUAL_MEMORY(short_entry.name, record.entry.name, FAT32_SHORT_NAME_LENGTH);
+}
+
+/*
+ * Verifies that creating a long-named file skips an occupied short
+ * alias and selects the next available numbered alias.
+ */
+void test_file_create_long_filename_alias_collision(void)
+{
+    const char *filename = "My First Document.txt";
+
+    uint8_t existing_alias[FAT32_SHORT_NAME_LENGTH];
+
+    TEST_ASSERT_TRUE(fat32_make_short_alias(filename, 1, existing_alias));
+
+    // Occupy the first candidate alias with an existing regular file.
+    fat32_directory_entry_t existing = {0};
+
+    memcpy(existing.name, existing_alias, FAT32_SHORT_NAME_LENGTH);
+    existing.attributes = FAT32_ATTR_ARCHIVE;
+
+    TEST_ASSERT_TRUE(fat32_directory_write_entry(&volume, TEST_FIRST_CLUSTER, 0, &existing));
+
+    // Place the directory end marker immediately after the existing file.
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER, 1, FAT32_DIR_ENTRY_END);
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    fat32_directory_entry_t first_lfn;
+    fat32_directory_entry_t second_lfn;
+    fat32_directory_entry_t short_entry;
+
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 1, &first_lfn));
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 2, &second_lfn));
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 3, &short_entry));
+
+    TEST_ASSERT_EQUAL_HEX8(FAT32_ATTR_LONG_NAME, first_lfn.attributes);
+    TEST_ASSERT_EQUAL_HEX8(FAT32_ATTR_LONG_NAME, second_lfn.attributes);
+    TEST_ASSERT_EQUAL_MEMORY("MYFIRS~2TXT", short_entry.name, FAT32_SHORT_NAME_LENGTH);
+
+    // The original entry must remain untouched.
+    fat32_directory_entry_t preserved;
+
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 0, &preserved));
+    TEST_ASSERT_EQUAL_MEMORY(existing_alias, preserved.name, FAT32_SHORT_NAME_LENGTH);
+}
+
+/*
+ * Verifies that attempting to create an existing long filename fails
+ * without changing its directory entries or allocating additional space.
+ */
+void test_file_create_duplicate_long_filename(void)
+{
+    const char *path = "/My First Document.txt";
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, path));
+
+    fat32_directory_entry_t original[3];
+
+    for (uint32_t i = 0; i < 3; i++) {
+        TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, i, &original[i]));
+    }
+
+    uint32_t writes_before = mock_fat32_write_count();
+    uint32_t extensions_before = mock_fat32_extension_count();
+
+    // Creating the same file again must fail.
+    TEST_ASSERT_FALSE(fat32_file_create(&volume, path));
+
+    TEST_ASSERT_EQUAL_UINT32(writes_before, mock_fat32_write_count());
+    TEST_ASSERT_EQUAL_UINT32(extensions_before, mock_fat32_extension_count());
+
+    // The existing LFN sequence and short entry must remain unchanged.
+    for (uint32_t i = 0; i < 3; i++) {
+        fat32_directory_entry_t current;
+
+        TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, i, &current));
+        TEST_ASSERT_EQUAL_MEMORY(&original[i], &current, sizeof(current));
+    }
+}
+
+/*
+ * Verifies that a failed LFN write does not publish the short entry
+ * or leave a partially created file visible in the directory.
+ */
+void test_file_create_long_filename_write_failure(void)
+{
+    const char *filename = "My First Document.txt";
+
+    // Fail the second directory write during creation.
+    mock_fat32_fail_write(2);
+
+    TEST_ASSERT_FALSE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    fat32_directory_record_t record;
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_NOT_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster, filename, &record));
+
+    // The short entry must not have been published.
+    fat32_directory_entry_t entry;
+
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 2, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_END, entry.name[0]);
+}
+
+/*
+ * Verifies that deleting a long filename removes its associated LFN
+ * entries and short directory entry without affecting adjacent slots.
+ */
+void test_file_delete_long_filename(void)
+{
+    fat32_directory_record_t record;
+    fat32_directory_entry_t entry;
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER, record.directory_cluster);
+    TEST_ASSERT_EQUAL_UINT32(2, record.directory_index);
+
+    TEST_ASSERT_TRUE(fat32_file_delete(&volume, "/My First Document.txt"));
+
+    // Both LFN entries must be marked deleted.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 0, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_DELETED, entry.name[0]);
+
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 1, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_DELETED, entry.name[0]);
+
+    // The associated short entry must also be deleted.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 2, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_DELETED, entry.name[0]);
+
+    // The end-of-directory marker must remain intact.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 3, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_END, entry.name[0]);
+
+    // The deleted filename must no longer be found.
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_NOT_FOUND,
+        fat32_directory_find(&volume, volume.root_cluster, "My First Document.txt", &record));
+}
+
+/*
+ * Verifies that directory lookup reports the number of validated LFN
+ * entries and distinguishes long filenames from ordinary 8.3 names.
+ */
+void test_directory_record_lfn_entry_count(void)
+{
+    fat32_directory_record_t record;
+
+    // A 21-character filename requires two LFN entries.
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster, "My First Document.txt",
+                                           &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER, record.directory_cluster);
+    TEST_ASSERT_EQUAL_UINT32(2, record.directory_index);
+
+    // An ordinary 8.3 filename must not report any LFN entries.
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/TEST.TXT"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster, "TEST.TXT", &record));
+
+    TEST_ASSERT_EQUAL_UINT8(0, record.lfn_entry_count);
+}
+
+/*
+ * Verifies that the start of an LFN sequence can be located
+ * when all its entries reside in the same directory cluster.
+ */
+void test_find_lfn_start_same_cluster(void)
+{
+    fat32_directory_record_t record;
+    uint32_t start_cluster = 0;
+    uint32_t start_index = 0;
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster, "My First Document.txt",
+                                           &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+
+    TEST_ASSERT_TRUE(fat32_directory_find_lfn_start(&volume, volume.root_cluster, &record,
+                                                    &start_cluster, &start_index));
+
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER, start_cluster);
+    TEST_ASSERT_EQUAL_UINT32(0, start_index);
+}
+
+/*
+ * Verifies that the beginning of an LFN sequence is located correctly
+ * when the sequence spans two directory clusters.
+ */
+void test_find_lfn_start_across_cluster_boundary(void)
+{
+    fat32_directory_record_t record;
+    uint32_t start_cluster = 0;
+    uint32_t start_index = 0;
+
+    // Link two directory clusters together.
+    mock_fat32_link(TEST_FIRST_CLUSTER, TEST_FIRST_CLUSTER + 1);
+    mock_fat32_link(TEST_FIRST_CLUSTER + 1, FAT32_CLUSTER_EOC);
+
+    // Occupy the first three entries, leaving the final slot available.
+    fill_cluster(TEST_FIRST_CLUSTER, TEST_OCCUPIED_MARKER);
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER, 3, FAT32_DIR_ENTRY_DELETED);
+
+    // The next cluster begins with an end-of-directory marker.
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER + 1, 0, FAT32_DIR_ENTRY_END);
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster, "My First Document.txt",
+                                           &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER + 1, record.directory_cluster);
+    TEST_ASSERT_EQUAL_UINT32(1, record.directory_index);
+
+    TEST_ASSERT_TRUE(fat32_directory_find_lfn_start(&volume, volume.root_cluster, &record,
+                                                    &start_cluster, &start_index));
+
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER, start_cluster);
+    TEST_ASSERT_EQUAL_UINT32(3, start_index);
+}
+
+/*
+ * Verifies that LFN validation accepts an intact sequence and rejects
+ * a sequence whose checksum no longer matches its short entry.
+ */
+void test_directory_validate_lfn_checksum(void)
+{
+    fat32_directory_record_t record;
+    fat32_directory_entry_t entry;
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster, "My First Document.txt",
+                                           &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+
+    // An unchanged LFN sequence must validate successfully.
+    TEST_ASSERT_TRUE(fat32_directory_validate_lfn(&volume, volume.root_cluster, &record));
+
+    // Corrupt the checksum in the first LFN entry.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 0, &entry));
+
+    fat32_long_directory_entry_t *lfn = (fat32_long_directory_entry_t *)&entry;
+    lfn->checksum ^= 0xFF;
+
+    TEST_ASSERT_TRUE(fat32_directory_write_entry(&volume, TEST_FIRST_CLUSTER, 0, &entry));
+
+    // The original record must no longer validate.
+    TEST_ASSERT_FALSE(fat32_directory_validate_lfn(&volume, volume.root_cluster, &record));
+}
+
+/*
+ * Verifies that an LFN sequence spanning two directory clusters can
+ * be validated, and that corruption in the second cluster is detected.
+ */
+void test_directory_validate_lfn_across_cluster_boundary(void)
+{
+    fat32_directory_record_t record;
+    fat32_directory_entry_t entry;
+
+    mock_fat32_link(TEST_FIRST_CLUSTER, TEST_FIRST_CLUSTER + 1);
+    mock_fat32_link(TEST_FIRST_CLUSTER + 1, FAT32_CLUSTER_EOC);
+
+    // Leave one free entry at the end of the first cluster.
+    fill_cluster(TEST_FIRST_CLUSTER, TEST_OCCUPIED_MARKER);
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER, 3, FAT32_DIR_ENTRY_DELETED);
+
+    // The next cluster starts with an end-of-directory marker.
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER + 1, 0, FAT32_DIR_ENTRY_END);
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster, "My First Document.txt",
+                                           &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+    TEST_ASSERT_TRUE(fat32_directory_validate_lfn(&volume, volume.root_cluster, &record));
+
+    // Corrupt the LFN entry located in the second cluster.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER + 1, 0, &entry));
+
+    fat32_long_directory_entry_t *lfn = (fat32_long_directory_entry_t *)&entry;
+    lfn->checksum ^= 0xFF;
+
+    TEST_ASSERT_TRUE(fat32_directory_write_entry(&volume, TEST_FIRST_CLUSTER + 1, 0, &entry));
+
+    TEST_ASSERT_FALSE(fat32_directory_validate_lfn(&volume, volume.root_cluster, &record));
+}
+
+/*
+ * Verifies that changing the LFN characters without changing their
+ * checksum invalidates a previously resolved directory record.
+ */
+void test_directory_validate_lfn_name_corruption(void)
+{
+    fat32_directory_record_t record;
+    fat32_directory_entry_t entry;
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster, "My First Document.txt",
+                                           &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+    TEST_ASSERT_TRUE(fat32_directory_validate_lfn(&volume, volume.root_cluster, &record));
+
+    // Change the first UTF-16 character without modifying the checksum.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 1, &entry));
+
+    fat32_long_directory_entry_t *lfn = (fat32_long_directory_entry_t *)&entry;
+    lfn->name_1[0] = 'X';
+
+    TEST_ASSERT_TRUE(fat32_directory_write_entry(&volume, TEST_FIRST_CLUSTER, 1, &entry));
+
+    // The original directory record must no longer validate.
+    TEST_ASSERT_FALSE(fat32_directory_validate_lfn(&volume, volume.root_cluster, &record));
+}
+
+/*
+ * Verifies that deleting an LFN sequence marks only its long filename
+ * entries as deleted, preserving the associated short directory entry.
+ */
+void test_directory_delete_lfn_same_cluster(void)
+{
+    fat32_directory_record_t record;
+    fat32_directory_entry_t entry;
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+    TEST_ASSERT_TRUE(fat32_directory_validate_lfn(&volume, volume.root_cluster, &record));
+
+    TEST_ASSERT_TRUE(fat32_directory_delete_lfn(&volume, volume.root_cluster, &record));
+
+    // Both LFN entries should now be marked as deleted.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 0, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_DELETED, entry.name[0]);
+
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 1, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_DELETED, entry.name[0]);
+
+    // The short entry must remain unchanged.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 2, &entry));
+    TEST_ASSERT_EQUAL_MEMORY(&record.entry, &entry, sizeof(entry));
+}
+
+/*
+ * Verifies that deleting an LFN sequence spanning two clusters marks
+ * both LFN entries as deleted without modifying the short entry.
+ */
+void test_directory_delete_lfn_across_cluster_boundary(void)
+{
+    fat32_directory_record_t record;
+    fat32_directory_entry_t entry;
+
+    mock_fat32_link(TEST_FIRST_CLUSTER, TEST_FIRST_CLUSTER + 1);
+    mock_fat32_link(TEST_FIRST_CLUSTER + 1, FAT32_CLUSTER_EOC);
+
+    // Leave one available slot at the end of the first cluster.
+    fill_cluster(TEST_FIRST_CLUSTER, TEST_OCCUPIED_MARKER);
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER, 3, FAT32_DIR_ENTRY_DELETED);
+
+    // The next cluster starts with an end-of-directory marker.
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER + 1, 0, FAT32_DIR_ENTRY_END);
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER + 1, record.directory_cluster);
+    TEST_ASSERT_EQUAL_UINT32(1, record.directory_index);
+
+    TEST_ASSERT_TRUE(fat32_directory_validate_lfn(&volume, volume.root_cluster, &record));
+    TEST_ASSERT_TRUE(fat32_directory_delete_lfn(&volume, volume.root_cluster, &record));
+
+    // First LFN entry is at the end of cluster 2.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 3, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_DELETED, entry.name[0]);
+
+    // Second LFN entry is at the beginning of cluster 3.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER + 1, 0, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_DELETED, entry.name[0]);
+
+    // The short entry must remain unchanged.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER + 1, 1, &entry));
+    TEST_ASSERT_EQUAL_MEMORY(&record.entry, &entry, sizeof(entry));
+}
+
+/*
+ * Verifies that deleting a long filename spanning two directory
+ * clusters removes all associated entries without modifying
+ * unrelated directory entries.
+ */
+void test_file_delete_long_filename_across_cluster_boundary(void)
+{
+    fat32_directory_record_t record;
+    fat32_directory_entry_t entry;
+
+    mock_fat32_link(TEST_FIRST_CLUSTER, TEST_FIRST_CLUSTER + 1);
+    mock_fat32_link(TEST_FIRST_CLUSTER + 1, FAT32_CLUSTER_EOC);
+
+    // Occupy the first three entries in the root directory.
+    fill_cluster(TEST_FIRST_CLUSTER, TEST_OCCUPIED_MARKER);
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER, 3, FAT32_DIR_ENTRY_DELETED);
+
+    // The second cluster begins with the end-of-directory marker.
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER + 1, 0, FAT32_DIR_ENTRY_END);
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER + 1, record.directory_cluster);
+    TEST_ASSERT_EQUAL_UINT32(1, record.directory_index);
+
+    TEST_ASSERT_TRUE(fat32_file_delete(&volume, "/My First Document.txt"));
+
+    // The first LFN entry is in cluster 2, index 3.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 3, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_DELETED, entry.name[0]);
+
+    // The second LFN entry is in cluster 3, index 0.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER + 1, 0, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_DELETED, entry.name[0]);
+
+    // The short entry is in cluster 3, index 1.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER + 1, 1, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_DELETED, entry.name[0]);
+
+    // The end-of-directory marker remains intact.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER + 1, 2, &entry));
+    TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_END, entry.name[0]);
+
+    // The original filename must no longer be found.
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_NOT_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+}
+
+/*
+ * Verifies that a failure writing the first LFN entry prevents deletion
+ * of the short entry and preserves the original directory contents.
+ */
+void test_file_delete_long_filename_first_write_failure(void)
+{
+    fat32_directory_record_t record;
+    fat32_directory_entry_t before[3];
+    fat32_directory_entry_t after;
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+
+    // Preserve all three entries before attempting deletion.
+    for (uint32_t index = 0; index < 3; index++) {
+        TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, index, &before[index]));
+    }
+
+    // Fail the first write performed by the deletion operation.
+    mock_fat32_fail_write(mock_fat32_write_count() + 1);
+
+    TEST_ASSERT_FALSE(fat32_file_delete(&volume, "/My First Document.txt"));
+
+    // No directory entry should have changed.
+    for (uint32_t index = 0; index < 3; index++) {
+        TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, index, &after));
+        TEST_ASSERT_EQUAL_MEMORY(&before[index], &after, sizeof(after));
+    }
+
+    // The original filename must still resolve successfully.
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+}
+
+/*
+ * Verifies that a failure deleting the second LFN entry triggers
+ * rollback of the first entry, preserving the complete filename.
+ */
+void test_file_delete_long_filename_second_write_failure(void)
+{
+    fat32_directory_record_t record;
+    fat32_directory_entry_t before[3];
+    fat32_directory_entry_t after;
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+
+    // Preserve the original LFN and short directory entries.
+    for (uint32_t index = 0; index < 3; index++) {
+        TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, index, &before[index]));
+    }
+
+    // Fail the second deletion write, allowing rollback writes to succeed.
+    mock_fat32_fail_write(mock_fat32_write_count() + 2);
+
+    TEST_ASSERT_FALSE(fat32_file_delete(&volume, "/My First Document.txt"));
+
+    // All three directory entries must match their original contents.
+    for (uint32_t index = 0; index < 3; index++) {
+        TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, index, &after));
+        TEST_ASSERT_EQUAL_MEMORY(&before[index], &after, sizeof(after));
+    }
+
+    // The original long filename must still resolve after rollback.
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+}
+
+/*
+ * Verifies that a failed LFN deletion write restores an earlier entry
+ * even when the original entries occupy different directory clusters.
+ */
+void test_file_delete_long_filename_cross_cluster_rollback(void)
+{
+    fat32_directory_record_t record;
+    fat32_directory_entry_t before[3];
+    fat32_directory_entry_t after;
+
+    mock_fat32_link(TEST_FIRST_CLUSTER, TEST_FIRST_CLUSTER + 1);
+    mock_fat32_link(TEST_FIRST_CLUSTER + 1, FAT32_CLUSTER_EOC);
+
+    // Leave one free slot at the end of the first cluster.
+    fill_cluster(TEST_FIRST_CLUSTER, TEST_OCCUPIED_MARKER);
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER, 3, FAT32_DIR_ENTRY_DELETED);
+    mock_fat32_set_marker(TEST_FIRST_CLUSTER + 1, 0, FAT32_DIR_ENTRY_END);
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+
+    // Preserve the two LFN entries and their associated short entry.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 3, &before[0]));
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER + 1, 0, &before[1]));
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER + 1, 1, &before[2]));
+
+    // Fail the second deletion write after the first LFN entry is modified.
+    mock_fat32_fail_write(mock_fat32_write_count() + 2);
+
+    TEST_ASSERT_FALSE(fat32_file_delete(&volume, "/My First Document.txt"));
+
+    // The first LFN entry must be restored in the original cluster.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, 3, &after));
+    TEST_ASSERT_EQUAL_MEMORY(&before[0], &after, sizeof(after));
+
+    // The second LFN entry must remain unchanged.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER + 1, 0, &after));
+    TEST_ASSERT_EQUAL_MEMORY(&before[1], &after, sizeof(after));
+
+    // The short entry must also remain unchanged.
+    TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER + 1, 1, &after));
+    TEST_ASSERT_EQUAL_MEMORY(&before[2], &after, sizeof(after));
+
+    // The original long filename must remain accessible.
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+}
+
+void test_file_delete_long_filename_short_entry_write_failure(void)
+{
+    fat32_directory_record_t record;
+    fat32_directory_entry_t before[3];
+    fat32_directory_entry_t after;
+
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+
+    // Preserve the original two LFN entries and short entry.
+    for (uint32_t index = 0; index < 3; index++) {
+        TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, index, &before[index]));
+    }
+
+    // Allow both LFN deletion writes, then fail the short-entry write.
+    mock_fat32_fail_write(mock_fat32_write_count() + 3);
+
+    TEST_ASSERT_FALSE(fat32_file_delete(&volume, "/My First Document.txt"));
+
+    // All entries should be restored to their original contents.
+    for (uint32_t index = 0; index < 3; index++) {
+        TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER, index, &after));
+        TEST_ASSERT_EQUAL_MEMORY(&before[index], &after, sizeof(after));
+    }
+
+    // The original long filename should remain accessible.
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -741,7 +1640,8 @@ int main(void)
     RUN_TEST(test_invalid_arguments);
     RUN_TEST(test_cluster_read_failure);
     RUN_TEST(test_cluster_extension_failure);
-
+    RUN_TEST(test_find_free_entries_starts_at_end_marker);
+    
     RUN_TEST(test_write_single_lfn_entry);
     RUN_TEST(test_write_multiple_lfn_entries);
     RUN_TEST(test_write_lfn_across_cluster_boundary);
@@ -751,6 +1651,8 @@ int main(void)
     RUN_TEST(test_lfn_rollback_restores_written_entries);
     RUN_TEST(test_lfn_rollback_on_short_entry_failure);
     RUN_TEST(test_lfn_rollback_restores_end_marker);
+    RUN_TEST(test_write_lfn_replaces_end_marker);
+    RUN_TEST(test_write_lfn_before_end_marker);
 
     RUN_TEST(test_make_short_alias_basic);
     RUN_TEST(test_make_short_alias_large_sequences);
@@ -759,5 +1661,30 @@ int main(void)
     RUN_TEST(test_find_short_alias_skips_collision);
     RUN_TEST(test_find_short_alias_read_failure);
 
+    RUN_TEST(test_filename_to_utf16);
+    RUN_TEST(test_filename_to_utf16_invalid_inputs);
+    RUN_TEST(test_filename_to_utf16_rejects_invalid_names);
+
+    RUN_TEST(test_file_create_long_filename);
+    RUN_TEST(test_file_create_long_filename_alias_collision);
+    RUN_TEST(test_file_create_duplicate_long_filename);
+    RUN_TEST(test_file_create_long_filename_write_failure);
+    RUN_TEST(test_file_delete_long_filename);
+    RUN_TEST(test_file_delete_long_filename_across_cluster_boundary);
+    RUN_TEST(test_file_delete_long_filename_first_write_failure);
+    RUN_TEST(test_file_delete_long_filename_second_write_failure);
+    RUN_TEST(test_file_delete_long_filename_cross_cluster_rollback);
+    RUN_TEST(test_file_delete_long_filename_short_entry_write_failure);
+
+    RUN_TEST(test_find_lfn_start_same_cluster);
+    RUN_TEST(test_find_lfn_start_across_cluster_boundary);
+
+    RUN_TEST(test_directory_record_lfn_entry_count);
+    RUN_TEST(test_directory_validate_lfn_checksum);
+    RUN_TEST(test_directory_validate_lfn_across_cluster_boundary);
+    RUN_TEST(test_directory_validate_lfn_name_corruption);
+    RUN_TEST(test_directory_delete_lfn_same_cluster);
+    RUN_TEST(test_directory_delete_lfn_across_cluster_boundary);
+    
     return UNITY_END();
 }

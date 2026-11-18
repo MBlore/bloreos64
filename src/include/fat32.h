@@ -229,6 +229,7 @@ typedef struct {
     char name[FAT32_UTF8_NAME_BUFFER_SIZE];     // Resolved UTF-8 filename.
     uint32_t directory_cluster;                 // Cluster containing the directory entry.
     uint32_t directory_index;                   // Zero-based entry index within the cluster.
+    uint8_t lfn_entry_count;                    // The number of entries that belong to the resolved file.
 } fat32_directory_record_t;
 
 /*
@@ -328,6 +329,16 @@ bool fat32_directory_find_short_alias(
     const char *filename,
     uint8_t alias[FAT32_SHORT_NAME_LENGTH]);
 
+bool fat32_directory_find_lfn_start(const fat32_volume_t *volume, uint32_t directory_cluster,
+                                   const fat32_directory_record_t *record,
+                                   uint32_t *start_cluster, uint32_t *start_index);
+bool fat32_directory_validate_lfn(const fat32_volume_t *volume, uint32_t directory_cluster,
+                                  const fat32_directory_record_t *record);
+bool fat32_directory_delete_lfn(const fat32_volume_t *volume, uint32_t directory_cluster,
+                                const fat32_directory_record_t *record);
+bool fat32_directory_restore_lfn(const fat32_volume_t *volume, uint32_t directory_cluster,
+                                 const fat32_directory_record_t *record);
+
 uint8_t fat32_lfn_checksum(const uint8_t *name);
 void fat32_lfn_process(fat32_lfn_state_t *state, const fat32_long_directory_entry_t *entry);
 bool fat32_lfn_validate(const fat32_lfn_state_t *state, const fat32_directory_entry_t *entry);
@@ -351,5 +362,6 @@ bool fat32_file_ensure_capacity(fat32_file_t *file, uint64_t capacity);
 bool fat32_file_create(const fat32_volume_t *volume, const char *path);
 bool fat32_file_delete(const fat32_volume_t *volume, const char *path);
 
+bool fat32_filename_to_utf16(const char *filename, uint16_t *output, uint32_t *length);
 
 #endif
