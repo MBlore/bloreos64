@@ -1628,6 +1628,199 @@ void test_file_delete_long_filename_short_entry_write_failure(void)
                                            "My First Document.txt", &record));
 }
 
+/*
+ * Verifies that resolving the parent of a root-level file returns
+ * the root directory cluster and the correct filename.
+ */
+void test_path_resolve_parent_root_file(void)
+{
+    uint32_t parent_cluster = 0;
+    char filename[FAT32_UTF8_NAME_BUFFER_SIZE];
+
+    TEST_ASSERT_TRUE(fat32_path_resolve_parent(&volume, "/readme.txt",
+                                               &parent_cluster, filename));
+
+    TEST_ASSERT_EQUAL_UINT32(volume.root_cluster, parent_cluster);
+    TEST_ASSERT_EQUAL_STRING("readme.txt", filename);
+}
+
+/*
+ * Verifies that resolving a nested file path returns the parent
+ * directory's starting cluster and the final filename component.
+ */
+void test_path_resolve_parent_nested_file(void)
+{
+    uint32_t parent_cluster = 0;
+    char filename[FAT32_UTF8_NAME_BUFFER_SIZE];
+
+    // Create a valid FAT32 short directory entry.
+    fat32_directory_entry_t directory;
+
+    memset(&directory, 0, sizeof(directory));
+    memcpy(directory.name, "DOCS       ", FAT32_SHORT_NAME_LENGTH);
+
+    directory.attributes = FAT32_ATTR_DIRECTORY;
+    directory.first_cluster_low = TEST_FIRST_CLUSTER + 1;
+
+    TEST_ASSERT_TRUE(fat32_directory_write_entry(&volume, TEST_FIRST_CLUSTER, 0, &directory));
+
+    TEST_ASSERT_TRUE(fat32_path_resolve_parent(&volume, "/docs/readme.txt",
+                                               &parent_cluster, filename));
+
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER + 1, parent_cluster);
+    TEST_ASSERT_EQUAL_STRING("readme.txt", filename);
+}
+
+/*
+ * Verifies that parent resolution fails when an intermediate
+ * directory does not exist.
+ */
+void test_path_resolve_parent_missing_directory(void)
+{
+    uint32_t parent_cluster = 0;
+    char filename[FAT32_UTF8_NAME_BUFFER_SIZE];
+
+    TEST_ASSERT_FALSE(fat32_path_resolve_parent(&volume, "/missing/readme.txt",
+                                                &parent_cluster, filename));
+}
+
+/*
+ * Verifies that parent resolution rejects a regular file
+ * when a directory is required.
+ */
+void test_path_resolve_parent_regular_file(void)
+{
+    uint32_t parent_cluster = 0;
+    char filename[FAT32_UTF8_NAME_BUFFER_SIZE];
+
+    // Create a regular file in the root directory.
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/docs"));
+
+    // A regular file cannot contain another file.
+    TEST_ASSERT_FALSE(fat32_path_resolve_parent(&volume, "/docs/readme.txt",
+                                                &parent_cluster, filename));
+}
+
+/*
+ * Verifies that creating a file using a nested path writes the new
+ * directory entry into the parent directory rather than the root.
+ */
+void test_file_create_nested_directory(void)
+{
+    fat32_directory_entry_t directory;
+    fat32_directory_record_t record;
+
+    // Create a DOCS directory entry in the root.
+    memset(&directory, 0, sizeof(directory));
+    memcpy(directory.name, "DOCS       ", FAT32_SHORT_NAME_LENGTH);
+
+    directory.attributes = FAT32_ATTR_DIRECTORY;
+    directory.first_cluster_low = TEST_FIRST_CLUSTER + 1;
+
+    TEST_ASSERT_TRUE(fat32_directory_write_entry(&volume, TEST_FIRST_CLUSTER, 0, &directory));
+
+    // Create a file inside DOCS.
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/docs/readme.txt"));
+
+    // The file must exist inside the DOCS directory.
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, TEST_FIRST_CLUSTER + 1,
+                                           "readme.txt", &record));
+
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER + 1, record.directory_cluster);
+    TEST_ASSERT_EQUAL_STRING("README.TXT", record.name);
+
+    // The file must not appear in the root directory.
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_NOT_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "readme.txt", &record));
+}
+
+/*
+ * Verifies that a long filename can be created inside an existing
+ * directory and that its original casing is preserved.
+ */
+void test_file_create_nested_long_filename(void)
+{
+    fat32_directory_entry_t directory;
+    fat32_directory_record_t record;
+
+    // Create the DOCS directory entry in the root.
+    memset(&directory, 0, sizeof(directory));
+    memcpy(directory.name, "DOCS       ", FAT32_SHORT_NAME_LENGTH);
+
+    directory.attributes = FAT32_ATTR_DIRECTORY;
+    directory.first_cluster_low = TEST_FIRST_CLUSTER + 1;
+
+    TEST_ASSERT_TRUE(fat32_directory_write_entry(&volume, TEST_FIRST_CLUSTER, 0, &directory));
+
+    // Create a long filename inside DOCS.
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/docs/My First Document.txt"));
+
+    // Verify that the file exists inside DOCS.
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, TEST_FIRST_CLUSTER + 1,
+                                           "My First Document.txt", &record));
+
+    TEST_ASSERT_EQUAL_STRING("My First Document.txt", record.name);
+    TEST_ASSERT_EQUAL_UINT32(TEST_FIRST_CLUSTER + 1, record.directory_cluster);
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+
+    // Verify that the file does not exist in the root directory.
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_NOT_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster,
+                                           "My First Document.txt", &record));
+}
+
+/*
+ * Verifies that deleting a long filename from a nested directory
+ * removes its LFN and short entries without modifying the parent.
+ */
+void test_file_delete_nested_long_filename(void)
+{
+    fat32_directory_entry_t directory;
+    fat32_directory_entry_t entry;
+    fat32_directory_record_t record;
+
+    // Create a DOCS directory entry in the root.
+    memset(&directory, 0, sizeof(directory));
+    memcpy(directory.name, "DOCS       ", FAT32_SHORT_NAME_LENGTH);
+
+    directory.attributes = FAT32_ATTR_DIRECTORY;
+    directory.first_cluster_low = TEST_FIRST_CLUSTER + 1;
+
+    TEST_ASSERT_TRUE(fat32_directory_write_entry(&volume, TEST_FIRST_CLUSTER, 0, &directory));
+
+    // Create and verify a long filename inside DOCS.
+    TEST_ASSERT_TRUE(fat32_file_create(&volume, "/docs/My First Document.txt"));
+
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, TEST_FIRST_CLUSTER + 1,
+                                           "My First Document.txt", &record));
+
+    TEST_ASSERT_EQUAL_UINT8(2, record.lfn_entry_count);
+
+    // Delete the nested file.
+    TEST_ASSERT_TRUE(fat32_file_delete(&volume, "/docs/My First Document.txt"));
+
+    // Both LFN entries and the short entry must be marked deleted.
+    for (uint32_t index = 0; index < 3; index++) {
+        TEST_ASSERT_TRUE(mock_fat32_get_entry(TEST_FIRST_CLUSTER + 1, index, &entry));
+        TEST_ASSERT_EQUAL_HEX8(FAT32_DIR_ENTRY_DELETED, entry.name[0]);
+    }
+
+    // The deleted filename must no longer resolve.
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_NOT_FOUND,
+                      fat32_directory_find(&volume, TEST_FIRST_CLUSTER + 1,
+                                           "My First Document.txt", &record));
+
+    // The parent directory must still exist.
+    TEST_ASSERT_EQUAL(FAT32_LOOKUP_FOUND,
+                      fat32_directory_find(&volume, volume.root_cluster, "docs", &record));
+
+    TEST_ASSERT_TRUE(record.entry.attributes & FAT32_ATTR_DIRECTORY);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -1675,6 +1868,9 @@ int main(void)
     RUN_TEST(test_file_delete_long_filename_second_write_failure);
     RUN_TEST(test_file_delete_long_filename_cross_cluster_rollback);
     RUN_TEST(test_file_delete_long_filename_short_entry_write_failure);
+    RUN_TEST(test_file_delete_nested_long_filename);
+    RUN_TEST(test_file_create_nested_directory);
+    RUN_TEST(test_file_create_nested_long_filename);
 
     RUN_TEST(test_find_lfn_start_same_cluster);
     RUN_TEST(test_find_lfn_start_across_cluster_boundary);
@@ -1685,6 +1881,11 @@ int main(void)
     RUN_TEST(test_directory_validate_lfn_name_corruption);
     RUN_TEST(test_directory_delete_lfn_same_cluster);
     RUN_TEST(test_directory_delete_lfn_across_cluster_boundary);
+
+    RUN_TEST(test_path_resolve_parent_root_file);
+    RUN_TEST(test_path_resolve_parent_nested_file);
+    RUN_TEST(test_path_resolve_parent_missing_directory);
+    RUN_TEST(test_path_resolve_parent_regular_file);
     
     return UNITY_END();
 }

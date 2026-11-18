@@ -338,6 +338,8 @@ bool fat32_directory_delete_lfn(const fat32_volume_t *volume, uint32_t directory
                                 const fat32_directory_record_t *record);
 bool fat32_directory_restore_lfn(const fat32_volume_t *volume, uint32_t directory_cluster,
                                  const fat32_directory_record_t *record);
+bool fat32_directory_init_cluster(const fat32_volume_t *volume, uint32_t cluster,
+                                  uint32_t parent_cluster);
 
 uint8_t fat32_lfn_checksum(const uint8_t *name);
 void fat32_lfn_process(fat32_lfn_state_t *state, const fat32_long_directory_entry_t *entry);
@@ -363,5 +365,9 @@ bool fat32_file_create(const fat32_volume_t *volume, const char *path);
 bool fat32_file_delete(const fat32_volume_t *volume, const char *path);
 
 bool fat32_filename_to_utf16(const char *filename, uint16_t *output, uint32_t *length);
+
+bool fat32_path_resolve_parent(const fat32_volume_t *volume, const char *path,
+                               uint32_t *parent_cluster,
+                               char filename[FAT32_UTF8_NAME_BUFFER_SIZE]);
 
 #endif

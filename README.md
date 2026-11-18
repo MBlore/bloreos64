@@ -79,7 +79,7 @@ make run
 | Calling Convention | System V AMD64 ABI |
 | Languages | C / LUA |
 | Compiler | GCC |
-| C Library | musl |
+| C Library | mlibc |
 | System Calls | SYSCALL / SYSRET |
 | Application Priv. | Ring 3 |
 | Kernel Priv. | Ring 0 |
