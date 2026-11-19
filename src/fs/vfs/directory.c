@@ -91,4 +91,29 @@ os_error_t vfs_listdir(const char *path,
     return mount->driver->listdir(mount->context, relative_path, callback, context);
 }
 
+/*
+ * Retrieves metadata for a file or directory using the filesystem
+ * mounted at the supplied path.
+ */
+os_error_t vfs_stat(const char *path, vfs_stat_t *stat)
+{
+    if (path == NULL || path[0] != '/' || stat == NULL) {
+        return OS_ERR_INVALID_ARGUMENT;
+    }
+
+    const char *relative_path = NULL;
+    const vfs_mount_t *mount = vfs_resolve(path, &relative_path);
+
+    if (mount == NULL) {
+        return OS_ERR_NOT_MOUNTED;
+    }
+
+    if (mount->driver->stat == NULL) {
+        return OS_ERR_NOT_SUPPORTED;
+    }
+
+    return mount->driver->stat(mount->context, relative_path, stat);
+}
+
+
 
