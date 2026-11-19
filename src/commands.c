@@ -23,6 +23,8 @@
 #include <str.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <time.h>
+#include <rtc.h>
 
 #define COMMAND_MAX_ARGS 8
 #define COMMAND_READ_SIZE 128
@@ -37,9 +39,56 @@ typedef struct {
     command_handler_t handler;
 } command_t;
 
-static bool command_get_path(const char *name, const char *argument, char *path, size_t capacity);
+static void command_ls(int argc, char **argv);
+static void command_cat(int argc, char **argv);
+static void command_mkdir(int argc, char **argv);
+static void command_rmdir(int argc, char **argv);
+static void command_touch(int argc, char **argv);
+static void command_rm(int argc, char **argv);
+static void command_help(int argc, char **argv);
 static void command_pwd(int argc, char **argv);
 static void command_cd(int argc, char **argv);
+static void command_date(int argc, char **argv);
+static void command_uptime(int argc, char **argv);
+static bool command_get_path(const char *name, const char *argument, char *path, size_t capacity);
+
+/*
+ * Registers the filesystem command names and their handlers.
+ */
+static const command_t commands[] = {
+    { "ls", command_ls },
+    { "cat", command_cat },
+    { "mkdir", command_mkdir },
+    { "rmdir", command_rmdir },
+    { "touch", command_touch },
+    { "rm", command_rm },
+    { "help", command_help },
+    { "pwd", command_pwd },
+    { "cd", command_cd },
+    { "date", command_date },
+    { "uptime", command_uptime },
+};
+
+/*
+ * Lists the available filesystem commands.
+ */
+static void command_help(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+
+    tprintf("Filesystem commands:\n");
+    tprintf("  pwd             Print working directory\n");
+    tprintf("  cd [path]       Change directory\n");
+    tprintf("  ls [path]       List directory\n");
+    tprintf("  cat <path>      Print file contents\n");
+    tprintf("  mkdir <path>    Create directory\n");
+    tprintf("  rmdir <path>    Remove empty directory\n");
+    tprintf("  touch <path>    Create file if missing\n");
+    tprintf("  rm <path>       Remove file\n");
+    tprintf("  date            Show current UTC date and time\n");
+    tprintf("  uptime          Show time since boot\n");
+}
 
 /*
  * Prints a filesystem error using the existing OS error descriptions.
@@ -233,40 +282,6 @@ static void command_rm(int argc, char **argv)
         command_error("rm", result);
     }
 }
-
-/*
- * Lists the available filesystem commands.
- */
-static void command_help(int argc, char **argv)
-{
-    (void)argc;
-    (void)argv;
-
-    tprintf("Filesystem commands:\n");
-    tprintf("  pwd             Print working directory\n");
-    tprintf("  cd [path]       Change directory\n");
-    tprintf("  ls [path]       List directory\n");
-    tprintf("  cat <path>      Print file contents\n");
-    tprintf("  mkdir <path>    Create directory\n");
-    tprintf("  rmdir <path>    Remove empty directory\n");
-    tprintf("  touch <path>    Create file if missing\n");
-    tprintf("  rm <path>       Remove file\n");
-}
-
-/*
- * Registers the filesystem command names and their handlers.
- */
-static const command_t commands[] = {
-    { "ls", command_ls },
-    { "cat", command_cat },
-    { "mkdir", command_mkdir },
-    { "rmdir", command_rmdir },
-    { "touch", command_touch },
-    { "rm", command_rm },
-    { "help", command_help },
-    { "pwd", command_pwd },
-    { "cd", command_cd }
-};
 
 /*
  * Parses an input line into whitespace-delimited arguments.
@@ -534,3 +549,52 @@ const char *commands_get_cwd(void)
     return current_directory;
 }
 
+/*
+ * Displays the current system date and time in UTC.
+ * Uses the software clock rather than rereading the RTC.
+ */
+static void command_date(int argc, char **argv)
+{
+    (void)argv;
+
+    if (argc != 1) {
+        tprintf("Usage: date\n");
+        return;
+    }
+
+    rtc_datetime_t now;
+
+    if (!time_get_datetime(&now)) {
+        tprintf("date: System clock unavailable\n");
+        return;
+    }
+
+    tprintf("%u-%c%c-%c%c %c%c:%c%c:%c%c UTC\n",
+            (unsigned int)now.year,
+            '0' + now.month / 10, '0' + now.month % 10,
+            '0' + now.day / 10, '0' + now.day % 10,
+            '0' + now.hour / 10, '0' + now.hour % 10,
+            '0' + now.minute / 10, '0' + now.minute % 10,
+            '0' + now.second / 10, '0' + now.second % 10);
+}
+
+/*
+ * Displays monotonic kernel uptime as hours, minutes and seconds.
+ */
+static void command_uptime(int argc, char **argv)
+{
+    (void)argv;
+
+    if (argc != 1) {
+        tprintf("Usage: uptime\n");
+        return;
+    }
+
+    uint64_t seconds = time_get_uptime_ms() / 1000;
+    uint64_t hours = seconds / 3600;
+    uint64_t minutes = (seconds % 3600) / 60;
+    uint64_t remaining = seconds % 60;
+
+    tprintf("Uptime: %lu hours, %lu minutes, %lu seconds\n",
+            (unsigned long)hours, (unsigned long)minutes, (unsigned long)remaining);
+}

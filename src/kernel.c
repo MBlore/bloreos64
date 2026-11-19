@@ -48,6 +48,7 @@
 #include <crc32.h>
 #include <vfs.h>
 #include <error.h>
+#include <time.h>
 
 #include "kernel.h"
 
@@ -243,36 +244,6 @@ static void run_test(void)
 }*/
 
 /*
- * Prints one directory entry returned by VFS.
- */
-static os_error_t ls_print_entry(const vfs_dirent_t *entry, void *context)
-{
-    (void)context;
-
-    if (entry->is_directory) {
-        kprintf("<DIR>  %s\n", entry->name);
-    } else {
-        kprintf("       %s  (%lu bytes)\n", entry->name, (unsigned long)entry->size);
-    }
-
-    return OS_OK;
-}
-
-/*
- * Lists a directory using the VFS enumeration interface.
- */
-static void run_ls(const char *path)
-{
-    kprintf("Listing %s:\n", path);
-
-    os_error_t result = vfs_listdir(path, ls_print_entry, NULL);
-
-    if (result != OS_OK) {
-        kprintf("ls: %s\n", os_error_string(result));
-    }
-}
-
-/*
  * Initialises the root FAT32 filesystem and registers it with VFS.
  */
 static os_error_t init_root_filesystem(void)
@@ -365,6 +336,18 @@ void kernel_main(void)
     
     hpet_init();
 
+    if (time_init()) {
+        rtc_datetime_t now;
+
+        if (time_get_datetime(&now)) {
+            kprintf("System clock initialized: %u-%u-%u %u:%u:%u UTC\n",
+                    (unsigned int)now.year, (unsigned int)now.month, (unsigned int)now.day,
+                    (unsigned int)now.hour, (unsigned int)now.minute, (unsigned int)now.second);
+        }
+    } else {
+        kprintf("System clock: RTC initialization failed\n");
+    }
+
     cpu_init();
 
     lapic_init();
@@ -394,16 +377,12 @@ void kernel_main(void)
 
         if (result == OS_OK) {
             kprintf("Data filesystem mounted at /volumes/data\n");
-
-            run_ls("/");
-            run_ls("/volumes/data");
         } else {
             kprintf("Data filesystem: %s\n", os_error_string(result));
         }
     }
 
     run_vfs_file_test();
-    run_ls("/volumes/data");
     run_vfs_persistence_test();
     run_vfs_unlink_test();
 

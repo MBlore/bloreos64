@@ -18,7 +18,15 @@
 #ifndef _BLOREOS_TIME_H
 #define _BLOREOS_TIME_H
 
+#include <stdint.h>
+#include <stdbool.h>
+#include <rtc.h>
+
 uint64_t time_get_uptime_ms(void);
 void time_sleep_ms(uint64_t ms);
+
+bool time_init(void);
+bool time_get_datetime(rtc_datetime_t *datetime);
+uint64_t time_get_unix_seconds(void);
 
 #endif

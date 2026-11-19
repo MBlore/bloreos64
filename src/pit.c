@@ -15,9 +15,6 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-/*
-    This is the physical memory manager, dealing with physical available memory only.
-*/
 #include <stdint.h>
 #include <pit.h>
 #include <cpu.h>
