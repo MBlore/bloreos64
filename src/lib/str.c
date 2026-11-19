@@ -18,8 +18,10 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <serial.h>
 #include <terminal.h>
+#include <limits.h>
 
 /* Reverses the string in str */
 void reverse(char str[], size_t length)
@@ -39,43 +41,31 @@ void reverse(char str[], size_t length)
     }
 }
 
-/* Converts an integer value to a null-terminated string storing the result in the str parameter */
+/*
+ * Converts a signed integer to a null-terminated string using
+ * the specified base, including the minimum signed integer.
+ */
 size_t itoa(int num, char str[], size_t base)
 {
+    if (str == NULL || base < 2 || base > 36) {
+        return 0;
+    }
+
+    bool negative = num < 0;
+    unsigned int magnitude = negative ? (unsigned int)-(num + 1) + 1u : (unsigned int)num;
     size_t i = 0;
 
-    // Handle negative numbers
-    int isNegative = 0;
-    if (num < 0)
-    {
-        isNegative = 1;
-        num = -num;
-    }
+    do {
+        unsigned int digit = magnitude % base;
+        str[i++] = (char)(digit < 10 ? '0' + digit : 'a' + digit - 10);
+        magnitude /= base;
+    } while (magnitude != 0);
 
-    // Handle 0 explicitly
-    if (num == 0)
-    {
-        str[i++] = '0';
-    }
-
-    // Process individual digits
-    while (num != 0)
-    {
-        size_t rem = num % base;
-        str[i++] = (rem > 9) ? (rem - 10) + 'a' : rem + '0';
-        num = num / base;
-    }
-
-    // Add the negative sign if necessary
-    if (isNegative)
-    {
+    if (negative) {
         str[i++] = '-';
     }
 
-    // Null-terminate the string
     str[i] = '\0';
-
-    // Reverse the string
     reverse(str, i);
 
     return i;
@@ -142,118 +132,179 @@ size_t __ultoua(uint64_t num, char str[], size_t base)
     return i;
 }
 
-/* Converts an int64_t value to a null-terminated string storing the result in the str parameter */
+/*
+ * Converts a signed 64-bit integer to a null-terminated string
+ * without overflowing when the value is INT64_MIN.
+ */
 size_t ltoa(int64_t num, char str[], size_t base)
 {
+    if (str == NULL || base < 2 || base > 36) {
+        return 0;
+    }
+
+    bool negative = num < 0;
+    uint64_t magnitude = negative ? (uint64_t)-(num + 1) + 1u : (uint64_t)num;
     size_t i = 0;
 
-    // Handle negative numbers
-    int isNegative = 0;
-    if (num < 0)
-    {
-        isNegative = 1;
-        num = -num;
-    }
+    do {
+        uint64_t digit = magnitude % base;
+        str[i++] = (char)(digit < 10 ? '0' + digit : 'a' + digit - 10);
+        magnitude /= base;
+    } while (magnitude != 0);
 
-    // Handle 0 explicitly
-    if (num == 0)
-    {
-        str[i++] = '0';
-    }
-
-    // Process individual digits
-    while (num != 0)
-    {
-        size_t rem = num % base;
-        str[i++] = (rem > 9) ? (rem - 10) + 'a' : rem + '0';
-        num = num / base;
-    }
-
-    // Add the negative sign if necessary
-    if (isNegative)
-    {
+    if (negative) {
         str[i++] = '-';
     }
 
-    // Null-terminate the string
     str[i] = '\0';
-
-    // Reverse the string
     reverse(str, i);
 
     return i;
 }
 
 /*
-    Formats a series of arguments in specific formats and stores the string equivalents in buffer
+ * Appends a character to a bounded formatting buffer.
+ *
+ * Always increments the logical output length, even when the
+ * destination buffer is full.
+ */
+static void format_append_char(char *buffer, size_t size, size_t *length, char ch)
+{
+    if (buffer != NULL && *length < size && *length < size - 1) {
+        buffer[*length] = ch;
+    }
 
-    %c - single char
-    %d - int
-    %x - uint64 as hexadecimal
-    %X - uint64 as hexadecimal upper-case
-    %s - string
-    %lu - uint64
-    %ld - int64
-*/
+    if (*length < SIZE_MAX) {
+        (*length)++;
+    }
+}
+
+/*
+ * Appends a null-terminated string to a bounded formatting buffer.
+ */
+static void format_append_string(char *buffer, size_t size, size_t *length, const char *str)
+{
+    while (*str != '\0') {
+        format_append_char(buffer, size, length, *str++);
+    }
+}
+
+
+/*
+ * Formats text into a bounded destination buffer.
+ *
+ * Supports %c, %s, %d, %i, %u, %x, %X, %ld, %lu and %%.
+ * Hexadecimal formatting retains BloreOS's existing 16-digit
+ * zero-padding behaviour.
+ *
+ * Returns the number of characters that would have been written,
+ * excluding the null terminator. The output is null-terminated
+ * whenever the destination size is greater than zero.
+ */
 int vsnprintf(char buffer[], size_t size, const char format[], va_list args)
 {
-    size_t bufferIndex = 0;
+    if (format == NULL || (size > 0 && buffer == NULL)) {
+        return -1;
+    }
 
-    // Iterate through the format string
-    for (size_t i = 0; format[i] != '\0'; ++i) {
-        if (format[i] == '%') {
-            ++i; // Move past '%'
+    size_t length = 0;
+    char number[32];
 
-            // Handle format specifiers
-            if (format[i] == 'd') {
-                int value = va_arg(args, int);
-                bufferIndex += itoa(value, buffer + bufferIndex, 10);
-            } else if (format[i] == 'x') {
-                uint64_t value = va_arg(args, uint64_t);
-                bufferIndex += __ultoa(value, buffer + bufferIndex, 16);
-            } else if (format[i] == 'X') {
-                uint64_t value = va_arg(args, uint64_t);
-                bufferIndex += __ultoua(value, buffer + bufferIndex, 16);
-            } else if (format[i] == 's') {
-                char *str = va_arg(args, char*);
-                while (*str != '\0') {
-                    buffer[bufferIndex++] = *str++;
-                }
-            } else if (format[i] == 'c') {
-                int ch = va_arg(args, int);
-                buffer[bufferIndex++] = (char)ch;
-            } else if (format[i] == 'l' && format[i+1] == 'u') {
-                ++i; // Move past the 2nd char format token
-                uint64_t value = va_arg(args, uint64_t);
-                bufferIndex += __ultoa(value, buffer + bufferIndex, 10);
-            } else if (format[i] == 'l' && format[i+1] == 'd') {
-                ++i; // Move past the 2nd char format token
-                int64_t value = va_arg(args, int64_t);
-                bufferIndex += ltoa(value, buffer + bufferIndex, 10);
-            }
+    for (size_t i = 0; format[i] != '\0'; i++) {
+        if (format[i] != '%') {
+            format_append_char(buffer, size, &length, format[i]);
+            continue;
         }
-        else {
-            // Check if there is space in the buffer
-            if (bufferIndex < size - 1) {
-                buffer[bufferIndex++] = format[i];
-            }
-            else {
-                // Truncate if the buffer is full
+
+        i++;
+
+        if (format[i] == '\0') {
+            format_append_char(buffer, size, &length, '%');
+            break;
+        }
+
+        switch (format[i]) {
+            case '%':
+                format_append_char(buffer, size, &length, '%');
+                break;
+
+            case 'c': {
+                int ch = va_arg(args, int);
+                format_append_char(buffer, size, &length, (char)ch);
                 break;
             }
+
+            case 's': {
+                const char *str = va_arg(args, const char *);
+                format_append_string(buffer, size, &length, str != NULL ? str : "(null)");
+                break;
+            }
+
+            case 'd':
+            case 'i': {
+                int value = va_arg(args, int);
+                itoa(value, number, 10);
+                format_append_string(buffer, size, &length, number);
+                break;
+            }
+
+            case 'u': {
+                unsigned int value = va_arg(args, unsigned int);
+                __ultoa(value, number, 10);
+                format_append_string(buffer, size, &length, number);
+                break;
+            }
+
+            case 'x': {
+                uint64_t value = va_arg(args, uint64_t);
+                __ultoa(value, number, 16);
+                format_append_string(buffer, size, &length, number);
+                break;
+            }
+
+            case 'X': {
+                uint64_t value = va_arg(args, uint64_t);
+                __ultoua(value, number, 16);
+                format_append_string(buffer, size, &length, number);
+                break;
+            }
+
+            case 'l': {
+                if (format[i + 1] == 'u') {
+                    i++;
+                    unsigned long value = va_arg(args, unsigned long);
+                    __ultoa(value, number, 10);
+                    format_append_string(buffer, size, &length, number);
+                } else if (format[i + 1] == 'd') {
+                    i++;
+                    long value = va_arg(args, long);
+                    ltoa(value, number, 10);
+                    format_append_string(buffer, size, &length, number);
+                } else {
+                    format_append_char(buffer, size, &length, '%');
+                    format_append_char(buffer, size, &length, 'l');
+                }
+
+                break;
+            }
+
+            default:
+                format_append_char(buffer, size, &length, '%');
+                format_append_char(buffer, size, &length, format[i]);
+                break;
         }
     }
 
-    // Null-terminate the resulting string
-    if (bufferIndex < size) {
-        buffer[bufferIndex] = '\0';
-    }
-    else {
-        // Ensure null termination in case of truncation
-        buffer[size - 1] = '\0';
+    if (size > 0) {
+        buffer[length < size ? length : size - 1] = '\0';
     }
 
-    return bufferIndex;
+    // An int cannot represent an output length larger than INT_MAX.
+    if (length > INT_MAX) {
+        return -1;
+    }
+
+    return (int)length;
 }
 
 int snprintf(char buffer[], size_t size, const char format[], ...)

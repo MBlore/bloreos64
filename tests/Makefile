@@ -21,7 +21,8 @@ TEST_SRC := \
 	test_str.c \
 	test_fat32_lfn.c \
 	test_fat32_directory.c \
-	test_fat32_dir_create.c
+	test_fat32_dir_create.c \
+	test_fat32_dir_delete.c
 
 TEST_BIN := $(patsubst %.c,bin/%,$(TEST_SRC))
 
@@ -124,11 +125,32 @@ FAT32_DIR_CREATE_SRC := ../src/fs/fat32/dir_create.c
 
 bin/test_fat32_dir_create: test_fat32_dir_create.c $(UNITY_SRC) \
                            $(FAT32_DIR_CREATE_SRC) $(FAT32_DIRECTORY_SRC) \
+                           $(FAT32_LFN_SRC) $(FAT32_UNICODE_SRC) \
+                           ../src/fs/fat32/path.c \
                            $(FAT32_DIRECTORY_MOCKS)
 	mkdir -p bin
 	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
 		-ffunction-sections -fdata-sections \
 		$(UNITY_SRC) $(FAT32_DIR_CREATE_SRC) $(FAT32_DIRECTORY_SRC) \
+		$(FAT32_LFN_SRC) $(FAT32_UNICODE_SRC) \
+		../src/fs/fat32/path.c \
+		$(FAT32_DIRECTORY_MOCKS) $< \
+		-Wl,--gc-sections -o $@
+
+bin/test_fat32_dir_delete: test_fat32_dir_delete.c $(UNITY_SRC) \
+                           $(FAT32_DIR_CREATE_SRC) $(FAT32_DIRECTORY_SRC) \
+                           $(FAT32_LFN_SRC) $(FAT32_PATH_SRC) $(FAT32_UNICODE_SRC) \
+                           ../src/fs/fat32/dir_delete.c $(FAT32_DIRECTORY_MOCKS)
+	mkdir -p bin
+	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
+		-ffunction-sections -fdata-sections \
+		$(UNITY_SRC) \
+		../src/fs/fat32/dir_delete.c \
+		$(FAT32_DIR_CREATE_SRC) \
+		$(FAT32_DIRECTORY_SRC) \
+		$(FAT32_LFN_SRC) \
+		$(FAT32_PATH_SRC) \
+		$(FAT32_UNICODE_SRC) \
 		$(FAT32_DIRECTORY_MOCKS) $< \
 		-Wl,--gc-sections -o $@
 

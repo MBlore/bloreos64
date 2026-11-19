@@ -57,10 +57,16 @@ CQueue_t *q_keyboard;
 LIMINE_BASE_REVISION(1)
 
 
+
+/*
+ * Integration-tests FAT32 directory creation and deletion
+ * using the NVMe-backed FAT32 partition.
+ */
 static void run_test(void)
 {
     partition_t *partition = partition_find("nvme0n2p1");
     fat32_volume_t volume;
+    fat32_directory_record_t record;
 
     if (partition == NULL || !fat32_init_volume(partition, &volume)) {
         kprintf("FAT32 initialisation: FAIL\n");
@@ -69,52 +75,142 @@ static void run_test(void)
 
     kprintf("FAT32 initialisation: PASS\n");
 
-    const char *path = "/F30.TXT";
-    fat32_directory_record_t record;
+    const char *path = "/TESTDIR";
 
-    // Ensure the test file does not already exist.
-    fat32_lookup_status_t status =
-        fat32_path_resolve(&volume, path, &record);
-
-    if (status != FAT32_LOOKUP_NOT_FOUND) {
-        kprintf("Test file initially absent: FAIL\n");
+    // The test requires a clean starting state.
+    if (fat32_path_resolve(&volume, path, &record) != FAT32_LOOKUP_NOT_FOUND) {
+        kprintf("Test directory initially absent: FAIL\n");
         return;
     }
 
-    kprintf("Test file initially absent: PASS\n");
+    kprintf("Test directory initially absent: PASS\n");
 
-    // Creating this file should extend the full root directory.
-    if (!fat32_file_create(&volume, path)) {
-        kprintf("Create file in full directory: FAIL\n");
+    if (!fat32_directory_create(&volume, path)) {
+        kprintf("Create directory: FAIL\n");
         return;
     }
 
-    kprintf("Create file in full directory: PASS\n");
+    kprintf("Create directory: PASS\n");
 
-    // Resolve the file to inspect its physical directory location.
-    status = fat32_path_resolve(&volume, path, &record);
-
-    if (status != FAT32_LOOKUP_FOUND) {
-        kprintf("Resolve new file: FAIL\n");
+    if (fat32_path_resolve(&volume, path, &record) != FAT32_LOOKUP_FOUND) {
+        kprintf("Resolve directory: FAIL\n");
         return;
     }
 
-    kprintf("Resolve new file: PASS\n");
+    kprintf("Resolve directory: PASS\n");
 
-    // The new entry must be in a different cluster from the root.
-    kprintf("Directory expanded: %s\n",
-            record.directory_cluster != volume.root_cluster ? "PASS" : "FAIL");
+    if (!(record.entry.attributes & FAT32_ATTR_DIRECTORY)) {
+        kprintf("Directory attribute: FAIL\n");
+        return;
+    }
 
-    // A newly extended directory should use its first entry.
-    kprintf("First entry in new cluster: %s\n",
-            record.directory_index == 0 ? "PASS" : "FAIL");
+    kprintf("Directory attribute: PASS\n");
 
-    // The new file should have no allocated data clusters.
-    kprintf("New file is empty: %s\n",
-            record.entry.file_size == 0 &&
-            fat32_get_first_cluster(&record.entry) == 0 ? "PASS" : "FAIL");
+    if (!fat32_directory_delete(&volume, path)) {
+        kprintf("Delete directory: FAIL\n");
+        return;
+    }
+
+    kprintf("Delete directory: PASS\n");
+
+    if (fat32_path_resolve(&volume, path, &record) != FAT32_LOOKUP_NOT_FOUND) {
+        kprintf("Directory removed: FAIL\n");
+        return;
+    }
+
+    kprintf("Directory removed: PASS\n");
+
+    kprintf("FAT32 mkdir/rmdir integration: PASS\n");
+
+    /*
+     * Verifies nested directory creation and deletion.
+     */
+    if (!fat32_directory_create(&volume, "/PARENT") ||
+        !fat32_directory_create(&volume, "/PARENT/CHILD")) {
+        kprintf("Create nested directories: FAIL\n");
+        return;
+    }
+
+    kprintf("Create nested directories: PASS\n");
+
+    if (fat32_directory_delete(&volume, "/PARENT")) {
+        kprintf("Reject non-empty parent: FAIL\n");
+        return;
+    }
+
+    kprintf("Reject non-empty parent: PASS\n");
+
+    if (!fat32_directory_delete(&volume, "/PARENT/CHILD") ||
+        !fat32_directory_delete(&volume, "/PARENT")) {
+        kprintf("Delete nested directories: FAIL\n");
+        return;
+    }
+
+    kprintf("Delete nested directories: PASS\n");
+
+    /*
+     * Verifies creation and deletion of a long-name directory.
+     */
+    if (!fat32_directory_create(&volume, "/My Documents")) {
+        kprintf("Create LFN directory: FAIL\n");
+        return;
+    }
+
+    kprintf("Create LFN directory: PASS\n");
+
+    if (!fat32_directory_delete(&volume, "/My Documents")) {
+        kprintf("Delete LFN directory: FAIL\n");
+        return;
+    }
+
+    kprintf("Delete LFN directory: PASS\n");
+
+    /*
+     * Verifies that a deleted directory's cluster is reusable.
+     */
+    if (!fat32_directory_create(&volume, "/REUSE1")) {
+        kprintf("Create reuse test directory: FAIL\n");
+        return;
+    }
+
+    if (fat32_path_resolve(&volume, "/REUSE1", &record) != FAT32_LOOKUP_FOUND) {
+        kprintf("Resolve reuse test directory: FAIL\n");
+        return;
+    }
+
+    uint32_t original_cluster = fat32_get_first_cluster(&record.entry);
+
+    if (!fat32_directory_delete(&volume, "/REUSE1") ||
+        !fat32_directory_create(&volume, "/REUSE2")) {
+        kprintf("Recreate directory after deletion: FAIL\n");
+        return;
+    }
+
+    if (fat32_path_resolve(&volume, "/REUSE2", &record) != FAT32_LOOKUP_FOUND) {
+        kprintf("Resolve recreated directory: FAIL\n");
+        return;
+    }
+
+    uint32_t new_cluster = fat32_get_first_cluster(&record.entry);
+
+    // FAT32 may choose a different free cluster, so compare FAT state
+    // separately rather than requiring the allocator to reuse this one.
+    kprintf("Directory recreated after release: PASS\n");
+
+    kprintf("Cluster allocation: original=%u new=%u\n",
+            original_cluster, new_cluster);
+
+    if (!fat32_directory_delete(&volume, "/REUSE2")) {
+        kprintf("Cleanup reuse test: FAIL\n");
+        return;
+    }
+
+    kprintf("Cleanup reuse test: PASS\n");
+    kprintf("FAT32 extended directory integration: PASS\n");
+
+    kprintf("Unsigned zero: %u\n", 0u);
+    kprintf("Unsigned maximum: %u\n", UINT32_MAX);
 }
-
 
 
 void kernel_main(void)

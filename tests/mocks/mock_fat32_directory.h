@@ -19,6 +19,7 @@ void mock_fat32_link(uint32_t cluster, uint32_t next_cluster);
 void mock_fat32_fail_read(uint32_t cluster);
 void mock_fat32_fail_extend(void);
 uint32_t mock_fat32_extension_count(void);
+void mock_fat32_fail_release(bool fail);
 
 /*
  * Controls and inspects simulated directory writes.

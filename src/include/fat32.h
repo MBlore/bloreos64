@@ -18,6 +18,7 @@
 #ifndef _BLOREOS_FAT32_H
 #define _BLOREOS_FAT32_H
 
+#include <partition.h>
 #include <stdint.h>
 #include <stddef.h>
 
@@ -312,6 +313,9 @@ bool fat32_directory_write_long_name(const fat32_volume_t *volume,
                                      uint32_t name_length,
                                      const fat32_directory_entry_t *short_entry);
 
+bool fat32_directory_create(const fat32_volume_t *volume, const char *path);
+bool fat32_directory_is_empty(const fat32_volume_t *volume, uint32_t directory_cluster);
+
 typedef enum {
     FAT32_SHORT_NAME_NOT_FOUND,
     FAT32_SHORT_NAME_FOUND,
@@ -340,6 +344,7 @@ bool fat32_directory_restore_lfn(const fat32_volume_t *volume, uint32_t director
                                  const fat32_directory_record_t *record);
 bool fat32_directory_init_cluster(const fat32_volume_t *volume, uint32_t cluster,
                                   uint32_t parent_cluster);
+bool fat32_directory_delete(const fat32_volume_t *volume, const char *path);
 
 uint8_t fat32_lfn_checksum(const uint8_t *name);
 void fat32_lfn_process(fat32_lfn_state_t *state, const fat32_long_directory_entry_t *entry);

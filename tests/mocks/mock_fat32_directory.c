@@ -13,6 +13,7 @@ static bool extend_failure;
 static uint32_t extension_count;
 static uint32_t write_count;
 static uint32_t failing_write_number;
+static bool release_failure;
 
 static bool valid_cluster(uint32_t cluster)
 {
@@ -34,9 +35,18 @@ void mock_fat32_reset(void)
     extension_count = 0;
     write_count = 0;
     failing_write_number = 0;
+    release_failure = false;
 
     // Initially, cluster 2 is the complete directory chain.
     next_cluster[0] = FAT32_CLUSTER_EOC;
+}
+
+/*
+ * Configures a simulated FAT cluster-chain release failure.
+ */
+void mock_fat32_fail_release(bool fail)
+{
+    release_failure = fail;
 }
 
 void mock_fat32_set_marker(uint32_t cluster, uint32_t index, uint8_t marker)
@@ -210,16 +220,93 @@ bool fat32_write_cluster(const fat32_volume_t *volume,
     return true;
 }
 
+
 /*
- * Simulates releasing a file's cluster chain.
- *
- * Directory-only tests do not need to modify the FAT. A separate
- * integration test will verify actual cluster-chain release.
+ * Releases a mock FAT cluster chain, making its clusters
+ * available for subsequent allocations.
  */
 bool fat32_release_chain(const fat32_volume_t *volume, uint32_t first_cluster)
 {
-    (void)volume;
-    (void)first_cluster;
+    if (release_failure) {
+        return false;
+    }
+    
+    if (volume == NULL || first_cluster < TEST_FIRST_CLUSTER || first_cluster > TEST_MAX_CLUSTER) {
+        return false;
+    }
+
+    uint32_t cluster = first_cluster;
+
+    for (uint32_t visited = 0; visited < TEST_CLUSTER_COUNT; visited++) {
+        if (!valid_cluster(cluster)) {
+            return false;
+        }
+
+        uint32_t index = cluster_index(cluster);
+        uint32_t next = next_cluster[index];
+
+        if (next == 0) {
+            return false;
+        }
+
+        next_cluster[index] = 0;
+        memset(cluster_data[index], 0, TEST_CLUSTER_BYTES);
+
+        if (next == FAT32_CLUSTER_EOC) {
+            return true;
+        }
+
+        cluster = next;
+    }
+
+    return false;
+}
+
+/*
+ * Allocates an unused cluster from the mock FAT.
+ *
+ * Marks the cluster as the end of a chain and clears its contents.
+ */
+bool fat32_allocate_cluster(const fat32_volume_t *volume, uint32_t *cluster)
+{
+    if (volume == NULL || cluster == NULL) {
+        return false;
+    }
+
+    for (uint32_t candidate = TEST_FIRST_CLUSTER; candidate <= TEST_MAX_CLUSTER; candidate++) {
+        uint32_t index = cluster_index(candidate);
+
+        if (next_cluster[index] != 0) {
+            continue;
+        }
+
+        next_cluster[index] = FAT32_CLUSTER_EOC;
+        memset(cluster_data[index], 0, TEST_CLUSTER_BYTES);
+
+        *cluster = candidate;
+        return true;
+    }
+
+    return false;
+}
+
+/*
+ * Releases a single allocated cluster in the mock FAT.
+ */
+bool fat32_release_cluster(const fat32_volume_t *volume, uint32_t cluster)
+{
+    if (volume == NULL || !valid_cluster(cluster)) {
+        return false;
+    }
+
+    uint32_t index = cluster_index(cluster);
+
+    if (next_cluster[index] == 0) {
+        return false;
+    }
+
+    next_cluster[index] = 0;
+    memset(cluster_data[index], 0, TEST_CLUSTER_BYTES);
 
     return true;
 }
