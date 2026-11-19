@@ -379,4 +379,10 @@ bool fat32_path_resolve_parent(const fat32_volume_t *volume, const char *path,
                                uint32_t *parent_cluster,
                                char filename[FAT32_UTF8_NAME_BUFFER_SIZE]);
 
+bool fat32_timestamp_now(fat32_directory_entry_t *entry, bool creation);
+bool fat32_timestamp_access(fat32_directory_entry_t *entry);
+void fat32_timestamp_decode(const fat32_directory_entry_t *entry,
+                            vfs_datetime_t *created, vfs_datetime_t *modified,
+                            vfs_datetime_t *accessed);
+
 #endif

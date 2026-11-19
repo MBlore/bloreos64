@@ -52,15 +52,32 @@ typedef struct {
 } vfs_file_t;
 
 typedef struct {
+    uint16_t year;
+    uint8_t month;
+    uint8_t day;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t second;
+    bool valid;
+    bool has_time;
+} vfs_datetime_t;
+
+typedef struct {
     vfs_type_t type;
     uint64_t size;
     uint32_t attributes;
+    vfs_datetime_t created;
+    vfs_datetime_t modified;
+    vfs_datetime_t accessed;
 } vfs_stat_t;
 
 typedef struct {
     char name[VFS_MAX_NAME];
     uint64_t size;
     bool is_directory;
+    vfs_datetime_t created;
+    vfs_datetime_t modified;
+    vfs_datetime_t accessed;
 } vfs_dirent_t;
 
 struct vfs_driver {

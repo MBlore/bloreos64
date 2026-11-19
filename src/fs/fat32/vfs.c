@@ -148,6 +148,8 @@ static os_error_t fat32_vfs_listdir(void *context, const char *path,
         entry.size = record.entry.file_size;
         entry.is_directory = (record.entry.attributes & FAT32_ATTR_DIRECTORY) != 0;
 
+        fat32_timestamp_decode(&record.entry, &entry.created, &entry.modified, &entry.accessed);
+
         result = callback(&entry, callback_context);
 
         if (result != OS_OK) {
@@ -195,6 +197,8 @@ static os_error_t fat32_vfs_stat(void *context, const char *path, vfs_stat_t *st
 
     stat->size = record.entry.file_size;
     stat->attributes = record.entry.attributes;
+    
+    fat32_timestamp_decode(&record.entry, &stat->created, &stat->modified, &stat->accessed);
 
     return OS_OK;
 }

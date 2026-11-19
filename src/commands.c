@@ -80,7 +80,7 @@ static void command_help(int argc, char **argv)
     tprintf("Filesystem commands:\n");
     tprintf("  pwd             Print working directory\n");
     tprintf("  cd [path]       Change directory\n");
-    tprintf("  ls [path]       List directory\n");
+    tprintf("  ls [-l] [path]  List directory (long format shows modification date)\n");
     tprintf("  cat <path>      Print file contents\n");
     tprintf("  mkdir <path>    Create directory\n");
     tprintf("  rmdir <path>    Remove empty directory\n");
@@ -99,11 +99,39 @@ static void command_error(const char *name, os_error_t result)
 }
 
 /*
- * Prints a directory entry returned by the VFS enumeration callback.
+ * Prints a VFS calendar timestamp as YYYY-MM-DD HH:MM.
+ *
+ * Unknown timestamps display a placeholder. FAT32 modification
+ * times have two-second resolution, so seconds are omitted.
+ */
+static void command_print_timestamp(const vfs_datetime_t *dt)
+{
+    if (!dt->valid || !dt->has_time) {
+        tprintf("---- -- -- --:--");
+        return;
+    }
+
+    tprintf("%u-%c%c-%c%c %c%c:%c%c",
+            (unsigned int)dt->year,
+            '0' + dt->month / 10, '0' + dt->month % 10,
+            '0' + dt->day / 10, '0' + dt->day % 10,
+            '0' + dt->hour / 10, '0' + dt->hour % 10,
+            '0' + dt->minute / 10, '0' + dt->minute % 10);
+}
+
+/*
+ * Displays one directory entry in normal or long-listing format.
+ *
+ * The callback context points to the long-format flag.
  */
 static os_error_t command_ls_entry(const vfs_dirent_t *entry, void *context)
 {
-    (void)context;
+    bool long_format = *(const bool *)context;
+
+    if (long_format) {
+        command_print_timestamp(&entry->modified);
+        tprintf("  ");
+    }
 
     if (entry->is_directory) {
         tprintf("<DIR>  %s\n", entry->name);
@@ -115,24 +143,42 @@ static os_error_t command_ls_entry(const vfs_dirent_t *entry, void *context)
 }
 
 /*
- * Lists the requested directory, or the current directory when no
- * path is specified.
+ * Lists a directory in normal or long format.
+ *
+ * Supported forms:
+ *   ls
+ *   ls <path>
+ *   ls -l
+ *   ls -l <path>
  */
 static void command_ls(int argc, char **argv)
 {
-    if (argc > 2) {
-        tprintf("Usage: ls [path]\n");
+    bool long_format = false;
+    const char *requested = ".";
+
+    if (argc >= 2 && strcmp(argv[1], "-l") == 0) {
+        long_format = true;
+
+        if (argc == 3) {
+            requested = argv[2];
+        } else if (argc > 3) {
+            tprintf("Usage: ls [-l] [path]\n");
+            return;
+        }
+    } else if (argc == 2) {
+        requested = argv[1];
+    } else if (argc > 2) {
+        tprintf("Usage: ls [-l] [path]\n");
         return;
     }
 
-    const char *requested = argc == 1 ? "." : argv[1];
     char path[COMMAND_PATH_MAX];
 
     if (!command_get_path("ls", requested, path, sizeof(path))) {
         return;
     }
 
-    os_error_t result = vfs_listdir(path, command_ls_entry, NULL);
+    os_error_t result = vfs_listdir(path, command_ls_entry, &long_format);
 
     if (result != OS_OK) {
         command_error("ls", result);

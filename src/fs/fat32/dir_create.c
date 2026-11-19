@@ -71,6 +71,14 @@ bool fat32_directory_init_cluster(const fat32_volume_t *volume, uint32_t cluster
     entries[1].first_cluster_high = (uint16_t)(stored_parent >> 16);
     entries[1].first_cluster_low = (uint16_t)stored_parent;
 
+    if (fat32_timestamp_now(&entries[0], true)) {
+        fat32_timestamp_now(&entries[0], false);
+    }
+
+    if (fat32_timestamp_now(&entries[1], true)) {
+        fat32_timestamp_now(&entries[1], false);
+    }
+
     bool success = fat32_write_cluster(volume, cluster, buffer);
 
     kfree(buffer);
@@ -173,6 +181,10 @@ bool fat32_directory_create(const fat32_volume_t *volume, const char *path)
     entry.attributes = FAT32_ATTR_DIRECTORY;
     entry.first_cluster_high = (uint16_t)(directory_cluster >> 16);
     entry.first_cluster_low = (uint16_t)directory_cluster;
+
+    if (fat32_timestamp_now(&entry, true)) {
+        fat32_timestamp_now(&entry, false);
+    }
 
     bool success;
 

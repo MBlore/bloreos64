@@ -200,6 +200,21 @@ int64_t fat32_file_read(fat32_file_t *file, void *buffer, size_t count)
         file->position += chunk_size;
     }
 
+    // Update the files last accessed time if bytes read.
+    if (bytes_read > 0) {
+        fat32_directory_entry_t entry;
+
+        if (fat32_directory_read_entry(file->volume, file->directory_cluster,
+                                    file->directory_index, &entry)) {
+            uint16_t old_date = entry.last_access_date;
+
+            if (fat32_timestamp_access(&entry) && entry.last_access_date != old_date) {
+                fat32_directory_write_entry(file->volume, file->directory_cluster,
+                                            file->directory_index, &entry);
+            }
+        }
+    }
+
     return (int64_t)bytes_read;
 }
 
@@ -382,7 +397,8 @@ bool fat32_file_update_metadata(fat32_file_t *file)
     entry.first_cluster_low = (uint16_t)file->first_cluster;
     entry.file_size = (uint32_t)file->size;
 
-    // Indicate that the file has been modified.
+    // Update the modification timestamp and archive attribute.
+    fat32_timestamp_now(&entry, false);
     entry.attributes |= FAT32_ATTR_ARCHIVE;
 
     if (!fat32_directory_write_entry(file->volume, file->directory_cluster,
@@ -477,9 +493,6 @@ bool fat32_file_ensure_capacity(fat32_file_t *file, uint64_t capacity)
     return true;
 }
 
-
-
-
 /*
  * Creates an empty regular file in the specified FAT32 directory.
  *
@@ -545,6 +558,10 @@ bool fat32_file_create(const fat32_volume_t *volume, const char *path)
 
     entry.attributes = FAT32_ATTR_ARCHIVE;
 
+    if (fat32_timestamp_now(&entry, true)) {
+        fat32_timestamp_now(&entry, false);
+    }
+
     if (!is_short_name) {
         uint32_t lfn_entries =
             (name_length + FAT32_LFN_CHARS_PER_ENTRY - 1) / FAT32_LFN_CHARS_PER_ENTRY;
@@ -602,7 +619,6 @@ bool fat32_file_create(const fat32_volume_t *volume, const char *path)
 
     return fat32_directory_write_entry(volume, entry_cluster, entry_index, &entry);
 }
-
 
 /*
  * Deletes a regular file from a FAT32 directory.
