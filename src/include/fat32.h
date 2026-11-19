@@ -18,9 +18,13 @@
 #ifndef _BLOREOS_FAT32_H
 #define _BLOREOS_FAT32_H
 
+#include <error.h>
 #include <partition.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <vfs.h>
+
+extern const vfs_driver_t fat32_vfs_driver;
 
 #define FAT32_BOOT_SECTOR_SIZE 512
 #define FAT32_BOOT_SIGNATURE 0xAA55
@@ -255,11 +259,11 @@ typedef struct {
     bool buffer_valid;               // Indicates whether cached data is valid.
 } fat32_file_t;
 
-bool fat32_read_boot_sector(partition_t *partition, fat32_boot_sector_t *boot_sector);
-bool fat32_validate_boot_sector(partition_t *partition, const fat32_boot_sector_t *boot_sector);
-bool fat32_init_volume(partition_t *partition, fat32_volume_t *volume);
-bool fat32_cluster_to_lba(const fat32_volume_t *volume, uint32_t cluster, uint64_t *lba);
+os_error_t fat32_read_boot_sector(partition_t *partition, fat32_boot_sector_t *boot_sector);
+os_error_t fat32_validate_boot_sector(partition_t *partition, const fat32_boot_sector_t *boot_sector);
+os_error_t fat32_init_volume(partition_t *partition, fat32_volume_t *volume);
 
+bool fat32_cluster_to_lba(const fat32_volume_t *volume, uint32_t cluster, uint64_t *lba);
 bool fat32_read_cluster(const fat32_volume_t *volume, uint32_t cluster, void *buffer);
 bool fat32_find_free_cluster(const fat32_volume_t *volume, uint32_t *cluster);
 bool fat32_write_cluster(const fat32_volume_t *volume, uint32_t cluster, const void *buffer);

@@ -448,3 +448,27 @@ int strcasecmp(const char *l, const char *r)
     // Returns 0 if every char passed compare.
     return ascii_tolower(*l) - ascii_tolower(*r);
 }
+
+/*
+ * Compares at most n characters of two strings.
+ *
+ * Returns zero if equal, a negative value if the first string is
+ * smaller, or a positive value if the first string is greater.
+ */
+int strncmp(const char *s1, const char *s2, size_t n)
+{
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c1 = (unsigned char)s1[i];
+        unsigned char c2 = (unsigned char)s2[i];
+
+        if (c1 != c2) {
+            return (int)c1 - (int)c2;
+        }
+
+        if (c1 == '\0') {
+            return 0;
+        }
+    }
+
+    return 0;
+}

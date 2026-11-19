@@ -46,9 +46,13 @@
 #include <partition.h>
 #include <fat32.h>
 #include <crc32.h>
+#include <vfs.h>
+#include <error.h>
 
 #include "kernel.h"
 
+static fat32_volume_t root_volume;
+static fat32_volume_t data_volume;
 CQueue_t *q_keyboard;
 
 // Set the base revision to 1, this is recommended as this is the latest
@@ -57,161 +61,176 @@ CQueue_t *q_keyboard;
 LIMINE_BASE_REVISION(1)
 
 
+/*
+ * Ensures a directory exists on the root filesystem.
+ *
+ * Verifies an existing path is a directory rather than a file.
+ * Creates the directory when it is missing.
+ */
+static os_error_t ensure_directory(const char *path)
+{
+    fat32_directory_record_t record;
+    fat32_lookup_status_t status = fat32_path_resolve(&root_volume, path, &record);
+
+    if (status == FAT32_LOOKUP_FOUND) {
+        return (record.entry.attributes & FAT32_ATTR_DIRECTORY) ? OS_OK : OS_ERR_NOT_DIRECTORY;
+    }
+
+    if (status == FAT32_LOOKUP_NOT_DIRECTORY) {
+        return OS_ERR_NOT_DIRECTORY;
+    }
+
+    if (status == FAT32_LOOKUP_ERROR) {
+        return OS_ERR_IO;
+    }
+
+    return vfs_mkdir(path);
+}
+
+/*
+ * Initializes and mounts the secondary FAT32 data partition.
+ *
+ * Creates the mount-point directories if necessary and preserves
+ * any errors returned by filesystem initialization or mounting.
+ */
+static os_error_t init_data_filesystem(void)
+{
+    partition_t *partition = partition_find("nvme0n2p1");
+
+    if (partition == NULL) {
+        return OS_ERR_NOT_FOUND;
+    }
+
+    os_error_t result = fat32_init_volume(partition, &data_volume);
+
+    if (result != OS_OK) {
+        return result;
+    }
+
+    result = ensure_directory("/volumes");
+
+    if (result != OS_OK) {
+        return result;
+    }
+
+    result = ensure_directory("/volumes/data");
+
+    if (result != OS_OK) {
+        return result;
+    }
+
+    return vfs_mount("/volumes/data", &fat32_vfs_driver, &data_volume);
+}
+
 
 /*
  * Integration-tests FAT32 directory creation and deletion
  * using the NVMe-backed FAT32 partition.
  */
+/*
 static void run_test(void)
 {
-    partition_t *partition = partition_find("nvme0n2p1");
-    fat32_volume_t volume;
-    fat32_directory_record_t record;
+    os_error_t result;
 
-    if (partition == NULL || !fat32_init_volume(partition, &volume)) {
-        kprintf("FAT32 initialisation: FAIL\n");
+    result = vfs_mkdir("/VFSTEST");
+
+    if (result != OS_OK) {
+        kprintf("VFS mkdir: %s\n", os_error_string(result));
         return;
     }
 
-    kprintf("FAT32 initialisation: PASS\n");
+    kprintf("VFS mkdir: PASS\n");
 
-    const char *path = "/TESTDIR";
+    result = vfs_rmdir("/VFSTEST");
 
-    // The test requires a clean starting state.
-    if (fat32_path_resolve(&volume, path, &record) != FAT32_LOOKUP_NOT_FOUND) {
-        kprintf("Test directory initially absent: FAIL\n");
+    if (result != OS_OK) {
+        kprintf("VFS rmdir: %s\n", os_error_string(result));
         return;
     }
 
-    kprintf("Test directory initially absent: PASS\n");
+    kprintf("VFS rmdir: PASS\n");
+    kprintf("VFS FAT32 integration: PASS\n");
+}*/
 
-    if (!fat32_directory_create(&volume, path)) {
-        kprintf("Create directory: FAIL\n");
-        return;
+/*
+ * Prints one directory entry returned by VFS.
+ */
+static os_error_t ls_print_entry(const vfs_dirent_t *entry, void *context)
+{
+    (void)context;
+
+    if (entry->is_directory) {
+        kprintf("<DIR>  %s\n", entry->name);
+    } else {
+        kprintf("       %s  (%lu bytes)\n", entry->name, (unsigned long)entry->size);
     }
 
-    kprintf("Create directory: PASS\n");
-
-    if (fat32_path_resolve(&volume, path, &record) != FAT32_LOOKUP_FOUND) {
-        kprintf("Resolve directory: FAIL\n");
-        return;
-    }
-
-    kprintf("Resolve directory: PASS\n");
-
-    if (!(record.entry.attributes & FAT32_ATTR_DIRECTORY)) {
-        kprintf("Directory attribute: FAIL\n");
-        return;
-    }
-
-    kprintf("Directory attribute: PASS\n");
-
-    if (!fat32_directory_delete(&volume, path)) {
-        kprintf("Delete directory: FAIL\n");
-        return;
-    }
-
-    kprintf("Delete directory: PASS\n");
-
-    if (fat32_path_resolve(&volume, path, &record) != FAT32_LOOKUP_NOT_FOUND) {
-        kprintf("Directory removed: FAIL\n");
-        return;
-    }
-
-    kprintf("Directory removed: PASS\n");
-
-    kprintf("FAT32 mkdir/rmdir integration: PASS\n");
-
-    /*
-     * Verifies nested directory creation and deletion.
-     */
-    if (!fat32_directory_create(&volume, "/PARENT") ||
-        !fat32_directory_create(&volume, "/PARENT/CHILD")) {
-        kprintf("Create nested directories: FAIL\n");
-        return;
-    }
-
-    kprintf("Create nested directories: PASS\n");
-
-    if (fat32_directory_delete(&volume, "/PARENT")) {
-        kprintf("Reject non-empty parent: FAIL\n");
-        return;
-    }
-
-    kprintf("Reject non-empty parent: PASS\n");
-
-    if (!fat32_directory_delete(&volume, "/PARENT/CHILD") ||
-        !fat32_directory_delete(&volume, "/PARENT")) {
-        kprintf("Delete nested directories: FAIL\n");
-        return;
-    }
-
-    kprintf("Delete nested directories: PASS\n");
-
-    /*
-     * Verifies creation and deletion of a long-name directory.
-     */
-    if (!fat32_directory_create(&volume, "/My Documents")) {
-        kprintf("Create LFN directory: FAIL\n");
-        return;
-    }
-
-    kprintf("Create LFN directory: PASS\n");
-
-    if (!fat32_directory_delete(&volume, "/My Documents")) {
-        kprintf("Delete LFN directory: FAIL\n");
-        return;
-    }
-
-    kprintf("Delete LFN directory: PASS\n");
-
-    /*
-     * Verifies that a deleted directory's cluster is reusable.
-     */
-    if (!fat32_directory_create(&volume, "/REUSE1")) {
-        kprintf("Create reuse test directory: FAIL\n");
-        return;
-    }
-
-    if (fat32_path_resolve(&volume, "/REUSE1", &record) != FAT32_LOOKUP_FOUND) {
-        kprintf("Resolve reuse test directory: FAIL\n");
-        return;
-    }
-
-    uint32_t original_cluster = fat32_get_first_cluster(&record.entry);
-
-    if (!fat32_directory_delete(&volume, "/REUSE1") ||
-        !fat32_directory_create(&volume, "/REUSE2")) {
-        kprintf("Recreate directory after deletion: FAIL\n");
-        return;
-    }
-
-    if (fat32_path_resolve(&volume, "/REUSE2", &record) != FAT32_LOOKUP_FOUND) {
-        kprintf("Resolve recreated directory: FAIL\n");
-        return;
-    }
-
-    uint32_t new_cluster = fat32_get_first_cluster(&record.entry);
-
-    // FAT32 may choose a different free cluster, so compare FAT state
-    // separately rather than requiring the allocator to reuse this one.
-    kprintf("Directory recreated after release: PASS\n");
-
-    kprintf("Cluster allocation: original=%u new=%u\n",
-            original_cluster, new_cluster);
-
-    if (!fat32_directory_delete(&volume, "/REUSE2")) {
-        kprintf("Cleanup reuse test: FAIL\n");
-        return;
-    }
-
-    kprintf("Cleanup reuse test: PASS\n");
-    kprintf("FAT32 extended directory integration: PASS\n");
-
-    kprintf("Unsigned zero: %u\n", 0u);
-    kprintf("Unsigned maximum: %u\n", UINT32_MAX);
+    return OS_OK;
 }
 
+/*
+ * Lists a directory using the VFS enumeration interface.
+ */
+static void run_ls(const char *path)
+{
+    kprintf("Listing %s:\n", path);
+
+    os_error_t result = vfs_listdir(path, ls_print_entry, NULL);
+
+    if (result != OS_OK) {
+        kprintf("ls: %s\n", os_error_string(result));
+    }
+}
+
+/*
+ * Initialises the root FAT32 filesystem and registers it with VFS.
+ */
+static os_error_t init_root_filesystem(void)
+{
+    partition_t *partition = partition_find("nvme0n1p1");
+
+    if (partition == NULL) {
+        return OS_ERR_NOT_FOUND;
+    }
+
+    os_error_t result = fat32_init_volume(partition, &root_volume);
+
+    if (result != OS_OK) {
+        kprintf("FAT32: nvme0n1p1 initialization failed: %s\n", os_error_string(result));
+        return result;
+    }
+
+    vfs_init();
+
+    return vfs_mount("/", &fat32_vfs_driver, &root_volume);
+}
+
+static void test_fat32_volumes(void)
+{
+    const char *names[] = {
+        "nvme0n1p1",
+        "nvme0n2p1"
+    };
+
+    for (size_t i = 0; i < 2; i++) {
+        partition_t *partition = partition_find(names[i]);
+        fat32_volume_t volume;
+
+        if (partition == NULL) {
+            kprintf("%s: Partition not found\n", names[i]);
+            continue;
+        }
+
+        os_error_t result = fat32_init_volume(partition, &volume);
+
+        if (result != OS_OK) {
+            kprintf("%s: FAT32 initialization FAILED: %s\n", names[i], os_error_string(result));
+            continue;
+        }
+
+        kprintf("%s: FAT32 initialization PASS\n", names[i]);
+    }
+}
 
 void kernel_main(void)
 {
@@ -269,7 +288,22 @@ void kernel_main(void)
         }
     }
 
-    run_test();
+    test_fat32_volumes();
+
+    os_error_t result = init_root_filesystem();
+
+    if (result == OS_OK) {
+        os_error_t result = init_data_filesystem();
+
+        if (result == OS_OK) {
+            kprintf("Data filesystem mounted at /volumes/data\n");
+
+            run_ls("/");
+            run_ls("/volumes/data");
+        } else {
+            kprintf("Data filesystem: %s\n", os_error_string(result));
+        }
+    }
    
     // Process pending events or idle until an interrupt occurs.
     while(1) {

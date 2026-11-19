@@ -1,23 +1,57 @@
-# Create an empty zeroed-out 64MiB image file.
-rm -f image.hdd
-dd if=/dev/zero bs=1M count=0 seek=64 of=image.hdd
- 
-# Create a GPT partition table.
-/usr/sbin/sgdisk image.hdd -n 1:2048 -t 1:ef00
- 
-# Format the image as fat32.
-mformat -i image.hdd@@1M
- 
-# Make /EFI and /EFI/BOOT an MSDOS subdirectory.
-mmd -i image.hdd@@1M ::/EFI ::/EFI/BOOT
+#!/bin/bash
+set -euo pipefail
 
-# Install the Limine BIOS stages onto the image.
-./limine/limine bios-install image.hdd
- 
-# Copy over the relevant files
-mcopy -n -v -i image.hdd@@1M bin/bloreos limine.cfg limine/limine-bios.sys ::/
-mcopy -n -v -i image.hdd@@1M limine/BOOTX64.EFI ::/EFI/BOOT
-mcopy -n -v -i image.hdd@@1M limine/BOOTIA32.EFI ::/EFI/BOOT
+IMAGE="image.hdd"
+IMAGE_SIZE_MIB=256
+PARTITION_START=2048
+SECTOR_SIZE=512
 
-# Copy over custom files
-mcopy -n -v -i image.hdd@@1M Font.psf ::/
+# Create a new disk image.
+rm -f "$IMAGE"
+truncate -s "${IMAGE_SIZE_MIB}M" "$IMAGE"
+
+# Create a GPT partition table containing one EFI System Partition.
+/usr/sbin/sgdisk -n "1:${PARTITION_START}:0" -t 1:ef00 "$IMAGE"
+
+# Read the actual partition boundaries from GPT.
+PARTITION_INFO=$(/usr/sbin/sgdisk -i 1 "$IMAGE")
+
+PARTITION_FIRST=$(printf '%s\n' "$PARTITION_INFO" | awk '/First sector:/ {print $3}')
+PARTITION_LAST=$(printf '%s\n' "$PARTITION_INFO" | awk '/Last sector:/ {print $3}')
+
+# GPT sector ranges are inclusive.
+PARTITION_SECTORS=$((PARTITION_LAST - PARTITION_FIRST + 1))
+PARTITION_OFFSET=$((PARTITION_FIRST * SECTOR_SIZE))
+
+if (( PARTITION_SECTORS <= 0 )); then
+    echo "ERROR: Invalid GPT partition size" >&2
+    exit 1
+fi
+
+echo "Boot image: ${IMAGE_SIZE_MIB} MiB"
+echo "Partition start: ${PARTITION_FIRST}"
+echo "Partition end: ${PARTITION_LAST}"
+echo "Partition sectors: ${PARTITION_SECTORS}"
+
+# Format exactly the GPT partition as FAT32.
+MTOOLS_IMAGE="${IMAGE}@@${PARTITION_OFFSET}"
+
+mformat -F -T "$PARTITION_SECTORS" -i "$MTOOLS_IMAGE" ::
+
+# Create EFI directories.
+mmd -i "$MTOOLS_IMAGE" ::/EFI ::/EFI/BOOT
+
+# Install Limine BIOS boot stages.
+./limine/limine bios-install "$IMAGE"
+
+# Copy kernel and bootloader resources.
+mcopy -n -v -i "$MTOOLS_IMAGE" bin/bloreos limine.cfg limine/limine-bios.sys ::/
+
+# Copy UEFI bootloaders.
+mcopy -n -v -i "$MTOOLS_IMAGE" limine/BOOTX64.EFI ::/EFI/BOOT
+mcopy -n -v -i "$MTOOLS_IMAGE" limine/BOOTIA32.EFI ::/EFI/BOOT
+
+# Copy custom resources.
+mcopy -n -v -i "$MTOOLS_IMAGE" Font.psf ::/
+
+echo "FAT32 boot image created successfully."
