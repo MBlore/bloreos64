@@ -243,8 +243,8 @@ static void command_help(int argc, char **argv)
     (void)argv;
 
     tprintf("Filesystem commands:\n");
-    tprintf("  pwd            Print working directory\n");
-    tprintf("  cd [path]      Change directory\n");
+    tprintf("  pwd             Print working directory\n");
+    tprintf("  cd [path]       Change directory\n");
     tprintf("  ls [path]       List directory\n");
     tprintf("  cat <path>      Print file contents\n");
     tprintf("  mkdir <path>    Create directory\n");
