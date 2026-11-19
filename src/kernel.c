@@ -406,6 +406,8 @@ void kernel_main(void)
     run_ls("/volumes/data");
     run_vfs_persistence_test();
     run_vfs_unlink_test();
+
+    term_show_prompt();
    
     // Process pending events or idle until an interrupt occurs.
     while(1) {

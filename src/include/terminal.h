@@ -31,5 +31,6 @@ void term_bgcolor(uint32_t color);
 void term_keyevent(KeyEvent_t *ke);
 void term_cblink();
 void term_clear();
+void term_show_prompt(void);
 
 #endif

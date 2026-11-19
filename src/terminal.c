@@ -27,6 +27,7 @@
 #include <atomic.h>
 #include <idt.h>
 #include <time.h>
+#include <commands.h>
 
 typedef struct {
     uint16_t magic;         // Magic bytes for identification.
@@ -150,8 +151,7 @@ void _load_font()
 */
 void _render_glyph(char ch, uint32_t x, uint32_t y)
 {
-    uint8_t bytesPerGlyph = 1 * font_header->char_height;
-    uint32_t dataIndex = ch * bytesPerGlyph;
+    uint32_t dataIndex = (uint8_t)ch * font_header->char_height;
 
     // Render the glyph.
     for (int glyphRow = 0; glyphRow < font_header->char_height; glyphRow++) {
@@ -215,64 +215,55 @@ void term_cblink()
 }
 
 /*
- * Draws the term input line. Triggered when the text output scrolls or writes a new line char.
+ * Draws the term input line.
 */
-void _render_input_line()
+void _render_input_line(void)
 {
-    // If the render cursor X is 0, the line hasn't been written to yet.
-    // If it is > 0, the line is being written so we use the line underneath as the input line.
     input_render_x = 0;
-    input_render_y = render_x > 0 ? render_y + glyph_height : render_y;
+    input_render_y = render_y;
 
-    char buffer[] = "# ";
-
-    char *ch = &buffer[0];
+    const char *cwd = commands_get_cwd();
 
     term_fgcolor(0x44AAFF);
 
-    do {
-        _render_glyph(*ch, input_render_x, input_render_y);
+    while (*cwd != '\0' && input_render_x + (4 * glyph_width) <= frame_buffer->width) {
+        _render_glyph(*cwd++, input_render_x, input_render_y);
         input_render_x += glyph_width;
+    }
 
-        // TODO: Line breaks to next line, aka, multi-line input rendering.
-        ch++;
-    } while(*ch != '\0');
+    const char *prompt = " $ ";
+
+    while (*prompt != '\0' && input_render_x + glyph_width <= frame_buffer->width) {
+        _render_glyph(*prompt++, input_render_x, input_render_y);
+        input_render_x += glyph_width;
+    }
 
     term_fgcolor(TERM_DEFAULT_FGCOLOR);
-
     _render_cursor();
 }
 
-/*
- * Moves the rendering cursor to the next line. If the cursor exceeds the height of the screen,
- * this triggers a scroll of all lines above. 
-*/
-void _move_to_next_line()
-{
-    if (render_x == 0) {
-        // Blank the input from this line.
-        uint32_t *fb = frame_buffer->address;
-        uint32_t blank_start =fbindex(0, render_y);
-        uint32_t blank_end = fbindex(frame_buffer->width, render_y + glyph_height);
-        memset(&fb[blank_start], 0x00, (char*)&fb[blank_end] - (char*)&fb[blank_start]);
-    }
 
+/*
+ * Advances the terminal output to the next line.
+ *
+ * Scrolls the framebuffer when required and redraws the prompt
+ * at the updated terminal position.
+ */
+void _move_to_next_line(void)
+{
     render_x = 0;
     render_y += glyph_height;
 
-    // Detect bottom of screen.
-    if (render_y > frame_buffer->height - glyph_height) {
+    if (render_y + glyph_height > frame_buffer->height) {
         _shift_screen_up();
         render_y -= glyph_height;
     }
 
-    // Blank the new line as the input was here.
     uint32_t *fb = frame_buffer->address;
-    uint32_t blank_start =fbindex(0, render_y);
+    uint32_t blank_start = fbindex(0, render_y);
     uint32_t blank_end = fbindex(frame_buffer->width, render_y + glyph_height);
-    memset(&fb[blank_start], 0x00, (char*)&fb[blank_end] - (char*)&fb[blank_start]);
 
-    _render_input_line();
+    memset(&fb[blank_start], 0, (char *)&fb[blank_end] - (char *)&fb[blank_start]);
 }
 
 void tprintf(const char format[], ...)
@@ -337,10 +328,22 @@ void term_init()
     kprintf("Resolution: %dx%d\n", frame_buffer->width, frame_buffer->height);
     kprintf("BPP: %d\n", frame_buffer->bpp);
     kprintf("Pitch: %d\n", frame_buffer->pitch);
-
-    _render_input_line();
     
     is_ready = true;
+}
+
+/*
+ * Displays the interactive prompt at the current output position.
+ *
+ * Intended to be called when the terminal becomes ready for input.
+ */
+void term_show_prompt(void)
+{
+    if (render_x != 0) {
+        _move_to_next_line();
+    }
+
+    _render_input_line();
 }
 
 /*
@@ -349,8 +352,12 @@ void term_init()
 void term_clear()
 {
     _clear_screen();
-    render_x = render_y = input_render_x = input_render_y = cursor_x = cursor_y = 0;
-    _render_input_line();
+    render_x = 0;
+    render_y = 0;
+    input_render_x = 0;
+    input_render_y = 0;
+    cursor_x = 0;
+    cursor_y = 0;
 }
 
 /*
@@ -374,7 +381,7 @@ void _handle_cmd()
         uint64_t after = time_get_uptime_ms();
 
         tprintf("Elapsed: %d ms\n", after - before);
-    } else {
+    } else if (!commands_execute(input_str)) {
         tprintf("Unknown command.\n");
     }
 }
@@ -385,13 +392,29 @@ void _handle_cmd()
 void term_keyevent(KeyEvent_t *ke)
 {
     if (ke->event_type == PS2_KEYDOWN && ke->scan_code == PS2_SCANCODE_ENTER) {
-        // Process the input buffer.
-        tprintf("# ");
-        tprintf(input_str); // Echo the command to the output.
-        tprintf("\n");
+        // Remove the cursor from the completed input line.
+        _clear_cursor();
+
+        // The input is already visible, so do not print it again.
+        render_y = input_render_y;
+        render_x = 0;
+
+        // Start command output on the following line.
+        _move_to_next_line();
+
+        // Execute the command. Filesystem commands may produce multiple lines.
         _handle_cmd();
 
+        // Clear the input buffer for the next command.
         input_str[0] = '\0';
+
+        // If the command left a partial output line, finish it.
+        if (render_x != 0) {
+            _move_to_next_line();
+        }
+
+        // Render exactly one prompt using the potentially updated CWD.
+        _render_input_line();
 
         return;
     }
@@ -417,17 +440,25 @@ void term_keyevent(KeyEvent_t *ke)
         }
     }
 
-    if (ke->event_type == 0 && ke->ascii != 0) {
-        // Key down.
+    if (ke->event_type == PS2_KEYDOWN && ke->ascii != 0) {
+        size_t len = strlen(input_str);
+
+        if (len >= sizeof(input_str) - 1) {
+            return;
+        }
+
+        if (input_render_x + glyph_width >= frame_buffer->width) {
+            return;
+        }
+
+        _clear_cursor();
+
+        input_str[len] = ke->ascii;
+        input_str[len + 1] = '\0';
+
         _render_glyph(ke->ascii, input_render_x, input_render_y);
         input_render_x += glyph_width;
 
-        // Append to buffer.
-        size_t len = strlen(input_str);
-        input_str[len] = ke->ascii;
-        input_str[len+1] = '\0';
-
-        _clear_cursor();
         _render_cursor();
     }
 }
