@@ -40,6 +40,7 @@ size_t itoa(int num, char str[], size_t base);
 size_t ltoa(int64_t num, char str[], size_t base);
 size_t ultoa(uint64_t num, char str[], size_t base);
 
+char *strchr(const char *str, int ch);
 size_t strlen(const char *str);
 int strcmp(const char *l, const char *r);
 int strcasecmp(const char *l, const char *r);

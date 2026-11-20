@@ -264,8 +264,6 @@ void kernel_main(void)
         }
     }
     
-    elf_execution_test_run();
-
     klogf("System ready. Type 'help' for commands.\n\n");
 
     term_show_prompt();

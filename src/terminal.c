@@ -365,9 +365,7 @@ void term_clear()
 */
 void _handle_cmd()
 {
-    if (strcmp(input_str, "hello") == 0) {
-        tprintf("World!\n");
-    } else if (strcmp(input_str, "cls") == 0) {
+    if (strcmp(input_str, "cls") == 0) {
         term_clear();
     } else if (strcmp(input_str, "time") == 0) {
         tprintf("Kernel Time: %lums\n", time_get_uptime_ms());

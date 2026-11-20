@@ -23,6 +23,7 @@
 #include <process.h>
 #include <vm.h>
 #include <usermode.h>
+#include <process_exec.h>
 
 #include "../exec/loader.h"
 
@@ -32,83 +33,11 @@
  */
 bool elf_execution_test_run(void)
 {
-    const char *path = "/bin/hello";
-    vfs_stat_t stat;
-    vfs_file_t file;
-    elf_load_plan_t plan;
-    bool passed = false;
+    klogf("ELF execution test: ENTERING /bin/hello\n");
 
-    if (vfs_stat(path, &stat) != OS_OK || stat.type != VFS_TYPE_FILE ||
-        stat.size == 0 || stat.size > 1024 * 1024) {
-        klogf("ELF file test: STAT FAILED\n");
-        return false;
-    }
+    bool passed = process_exec("/bin/hello");
 
-    void *buffer = kalloc((size_t)stat.size);
-
-    if (buffer == NULL) {
-        klogf("ELF file test: ALLOCATION FAILED\n");
-        return false;
-    }
-
-    if (vfs_open(path, VFS_OPEN_READ, &file) != OS_OK) {
-        klogf("ELF file test: OPEN FAILED\n");
-        kfree(buffer);
-        return false;
-    }
-
-    int64_t bytes_read = vfs_read(&file, buffer, (size_t)stat.size);
-
-    vfs_close(&file);
-
-    if (bytes_read == (int64_t)stat.size) {
-        passed = elf_loader_plan(buffer, (size_t)stat.size, &plan);
-    }
-
-    if (passed) {
-        process_t process = {0};
-        uint64_t entry_point = 0;
-
-        passed = vm_create_address_space(&process.page_table_root);
-
-        if (passed) {
-            passed = elf_loader_load(&process, buffer, (size_t)stat.size, &entry_point);
-        }
-
-        if (passed) {
-            passed = entry_point == plan.entry_point &&
-                    process.user_stack_pointer == USER_STACK_TOP &&
-                    process_find_page(&process, entry_point) != NULL &&
-                    process_find_page(&process, USER_STACK_TOP - PAGE_SIZE) != NULL;
-        }
-
-        if (passed) {
-            const uint64_t kernel_root = vm_get_address_space();
-
-            klogf("ELF execution test: ENTERING /bin/hello\n");
-
-            usermode_enter(entry_point, process.user_stack_pointer, process.page_table_root);
-
-            passed = vm_get_address_space() == kernel_root;
-
-            klogf("ELF execution test: %s\n", passed ? "PASS" : "CR3 RESTORE FAILED");
-        }
-
-        process_free_pages(&process);
-
-        if (process.page_table_root != 0) {
-            vm_destroy_address_space(process.page_table_root);
-        }
-    }
-
-    klogf("ELF file test: %s\n", passed ? "PASS" : "FAIL");
-
-    if (passed) {
-        klogf("ELF entry point: 0x%X\n", plan.entry_point);
-        klogf("ELF load segments: %u\n", (unsigned int)plan.segment_count);
-    }
-
-    kfree(buffer);
+    klogf("ELF execution test: %s\n", passed ? "PASS" : "FAIL");
 
     return passed;
 }

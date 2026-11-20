@@ -480,3 +480,24 @@ int strncmp(const char *s1, const char *s2, size_t n)
 
     return 0;
 }
+
+/*
+ * Finds the first occurrence of a character in a null-terminated string.
+ *
+ * Returns a pointer to the matching character, or NULL if not found.
+ * The terminating null character can also be searched for.
+ */
+char *strchr(const char *str, int ch)
+{
+    unsigned char target = (unsigned char)ch;
+
+    while (*str != '\0') {
+        if ((unsigned char)*str == target) {
+            return (char *)str;
+        }
+
+        str++;
+    }
+
+    return target == '\0' ? (char *)str : NULL;
+}

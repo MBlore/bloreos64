@@ -25,6 +25,9 @@
 #include <stdint.h>
 #include <time.h>
 #include <rtc.h>
+#include <process_exec.h>
+#include <os_config.h>
+#include <string.h>
 
 #define COMMAND_MAX_ARGS 8
 #define COMMAND_READ_SIZE 128
@@ -404,7 +407,38 @@ bool commands_execute(char *line)
         }
     }
 
-    return false;
+    // Check for programs in /bin.
+    char path[COMMAND_PATH_MAX];
+
+    if (strchr(argv[0], '/') != NULL) {
+        if (!command_get_path(argv[0], argv[0], path, sizeof(path))) {
+            return true;
+        }
+    } else {
+        size_t directory_length = strlen(OS_DEFAULT_EXEC_PATH);
+        size_t command_length = strlen(argv[0]);
+
+        if (directory_length + 1 + command_length >= sizeof(path)) {
+            tprintf("%s: Command name too long\n", argv[0]);
+            return true;
+        }
+
+        memcpy(path, OS_DEFAULT_EXEC_PATH, directory_length);
+        path[directory_length] = '/';
+        memcpy(path + directory_length + 1, argv[0], command_length + 1);
+    }
+
+    vfs_stat_t stat;
+
+    if (vfs_stat(path, &stat) != OS_OK || stat.type != VFS_TYPE_FILE) {
+        return false;
+    }
+
+    if (!process_exec(path)) {
+        tprintf("%s: Failed to execute\n", argv[0]);
+    }
+
+    return true;
 }
 
 /*
