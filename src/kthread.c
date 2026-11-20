@@ -18,18 +18,14 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <kthread.h>
+#include <scheduler.h>
 
 /*
- * Handles a kernel thread returning from its entry function.
- *
- * Until thread termination is connected to the scheduler, returning
- * from a kernel thread is unsupported.
+ * Terminates a kernel thread when its entry function returns normally.
  */
 static void kthread_returned(void)
 {
-    for (;;) {
-        __asm__ volatile("cli; hlt");
-    }
+    scheduler_exit();
 }
 
 /*

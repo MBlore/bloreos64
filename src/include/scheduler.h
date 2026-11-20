@@ -29,5 +29,7 @@ thread_t    *scheduler_next(void);
 thread_t    *scheduler_current(void);
 void        scheduler_set_current(thread_t *thread);
 void        scheduler_yield(void);
+void        scheduler_exit(void) __attribute__((noreturn));
+uint32_t    scheduler_reap(void);
 
 #endif

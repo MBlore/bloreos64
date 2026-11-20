@@ -19,10 +19,16 @@
 #include <scheduler.h>
 #include <cpu.h>
 #include <thread.h>
+#include <kernel.h>
+#include <terminal.h>
 
 static thread_t *threads[SCHEDULER_MAX_THREADS];
 static thread_t *current_thread;
+
+// Number of threads currently registered with the scheduler.
 static uint32_t thread_count;
+
+// Index in the thread array where the next round-robin search begins.
 static uint32_t next_index;
 
 /*
@@ -161,4 +167,81 @@ void scheduler_yield(void)
     context_switch(&previous->context, &next->context);
 
     set_interrupt_state(interrupts_enabled);
+}
+
+/*
+ * Terminates the currently executing thread and switches to another
+ * runnable thread. A terminated thread must never resume execution.
+ */
+void scheduler_exit(void)
+{
+    disable_interrupts();
+
+    thread_t *previous = current_thread;
+
+    if (previous == NULL) {
+        hcf();
+    }
+
+    previous->state = THREAD_TERMINATED;
+
+    thread_t *next = scheduler_next();
+
+    if (next == NULL || next == previous) {
+        klogf("Scheduler: no runnable thread after exit\n");
+        hcf();
+    }
+
+    next->state = THREAD_RUNNING;
+    current_thread = next;
+
+    context_switch(&previous->context, &next->context);
+
+    // A terminated thread must never resume.
+    hcf();
+
+    __builtin_unreachable();
+}
+
+/*
+ * Removes terminated threads from the scheduler's thread table.
+ *
+ * Only scheduler registrations are reclaimed. Thread structures and
+ * kernel stacks remain owned by their creator.
+ *
+ * The currently executing thread is never removed.
+ */
+uint32_t scheduler_reap(void)
+{
+    bool interrupts_enabled = interrupt_state();
+    disable_interrupts();
+
+    uint32_t removed = 0;
+    uint32_t write_index = 0;
+
+    // Shift active threads down the array using the seperate
+    // write_index.
+    for (uint32_t read_index = 0; read_index < thread_count; read_index++) {
+        thread_t *thread = threads[read_index];
+
+        if (thread != current_thread && thread->state == THREAD_TERMINATED) {
+            removed++;
+            continue;
+        }
+
+        threads[write_index++] = thread;
+    }
+
+    // Since we shifted items down the array in the above loop,
+    // we can NULL the rest of the array.
+    for (uint32_t i = write_index; i < thread_count; i++) {
+        threads[i] = NULL;
+    }
+
+    thread_count = write_index;
+    next_index = 0;
+
+    set_interrupt_state(interrupts_enabled);
+
+    return removed;
 }

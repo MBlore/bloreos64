@@ -26,11 +26,7 @@ static void worker_a_entry(void)
         scheduler_yield();
     }
 
-    worker_a.state = THREAD_TERMINATED;
-
-    for (;;) {
-        scheduler_yield();
-    }
+    scheduler_exit();
 }
 
 /*
@@ -43,11 +39,7 @@ static void worker_b_entry(void)
         scheduler_yield();
     }
 
-    worker_b.state = THREAD_TERMINATED;
-
-    for (;;) {
-        scheduler_yield();
-    }
+    scheduler_exit();
 }
 
 /*
@@ -89,4 +81,8 @@ void scheduler_test_run(void)
     }
 
     klogf("Scheduler: both workers terminated\n");
+
+    uint32_t reaped = scheduler_reap();
+
+    klogf("Scheduler: reaped %u terminated threads\n", reaped);
 }
