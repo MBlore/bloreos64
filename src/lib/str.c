@@ -116,13 +116,6 @@ size_t __ultoua(uint64_t num, char str[], size_t base)
         num = num / base;
     } while (num != 0);
 
-    // Pad out the rest of the string with 0's.
-    if (base == 16) {
-        while (i < 16) {
-            str[i++] = '0';
-        }
-    }
-
     // Null-terminate the string
     str[i] = '\0';
 

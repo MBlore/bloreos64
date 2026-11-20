@@ -134,7 +134,7 @@ static void fat32_unpack_datetime(uint16_t date, uint16_t time,
     }
 
     static const uint8_t days[] = {
-        31, 28, 31, 30, 31, 30, 31, 31, 30, 31
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
     };
 
     uint8_t max_day = days[dt->month - 1];

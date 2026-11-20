@@ -51,6 +51,7 @@ static void command_cd(int argc, char **argv);
 static void command_date(int argc, char **argv);
 static void command_uptime(int argc, char **argv);
 static bool command_get_path(const char *name, const char *argument, char *path, size_t capacity);
+static void command_stat(int argc, char **argv);
 
 /*
  * Registers the filesystem command names and their handlers.
@@ -67,6 +68,7 @@ static const command_t commands[] = {
     { "cd", command_cd },
     { "date", command_date },
     { "uptime", command_uptime },
+    { "stat", command_stat }
 };
 
 /*
@@ -86,6 +88,7 @@ static void command_help(int argc, char **argv)
     tprintf("  rmdir <path>    Remove empty directory\n");
     tprintf("  touch <path>    Create file if missing\n");
     tprintf("  rm <path>       Remove file\n");
+    tprintf("  stat <path>     Display file or directory metadata\n");
     tprintf("  date            Show current UTC date and time\n");
     tprintf("  uptime          Show time since boot\n");
 }
@@ -643,4 +646,77 @@ static void command_uptime(int argc, char **argv)
 
     tprintf("Uptime: %lu hours, %lu minutes, %lu seconds\n",
             (unsigned long)hours, (unsigned long)minutes, (unsigned long)remaining);
+}
+
+/*
+ * Prints a VFS date and optional time in a human-readable format.
+ *
+ * Missing timestamps are reported as Unknown. Filesystems with
+ * date-only access timestamps omit the time-of-day portion.
+ */
+static void command_stat_datetime(const vfs_datetime_t *dt)
+{
+    if (!dt->valid) {
+        tprintf("Unknown\n");
+        return;
+    }
+
+    tprintf("%u-%c%c-%c%c",
+            (unsigned int)dt->year,
+            '0' + dt->month / 10, '0' + dt->month % 10,
+            '0' + dt->day / 10, '0' + dt->day % 10);
+
+    if (dt->has_time) {
+        tprintf(" %c%c:%c%c:%c%c",
+                '0' + dt->hour / 10, '0' + dt->hour % 10,
+                '0' + dt->minute / 10, '0' + dt->minute % 10,
+                '0' + dt->second / 10, '0' + dt->second % 10);
+    }
+
+    tprintf("\n");
+}
+
+/*
+ * Displays metadata for a file or directory through the VFS.
+ *
+ * Resolves relative paths against the current working directory.
+ * Reports size, file type, creation, modification and access
+ * timestamps, and filesystem attribute flags.
+ */
+static void command_stat(int argc, char **argv)
+{
+    if (argc != 2) {
+        tprintf("Usage: stat <path>\n");
+        return;
+    }
+
+    char path[COMMAND_PATH_MAX];
+
+    if (!command_get_path("stat", argv[1], path, sizeof(path))) {
+        return;
+    }
+
+    vfs_stat_t stat;
+    os_error_t result = vfs_stat(path, &stat);
+
+    if (result != OS_OK) {
+        command_error("stat", result);
+        return;
+    }
+
+    tprintf("  File:       %s\n", path);
+    tprintf("  Type:       %s\n",
+            stat.type == VFS_TYPE_DIRECTORY ? "Directory" : "Regular file");
+    tprintf("  Size:       %lu bytes\n", (unsigned long)stat.size);
+
+    tprintf("  Created:    ");
+    command_stat_datetime(&stat.created);
+
+    tprintf("  Modified:   ");
+    command_stat_datetime(&stat.modified);
+
+    tprintf("  Accessed:   ");
+    command_stat_datetime(&stat.accessed);
+
+    tprintf("  Attributes: 0x%X\n", (uint64_t)stat.attributes);
 }
