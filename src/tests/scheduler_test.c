@@ -43,6 +43,34 @@ static void worker_b_entry(void)
 }
 
 /*
+ * Verifies that terminated thread registrations can be reclaimed
+ * and their scheduler slots reused.
+ */
+static void scheduler_test_reuse(void)
+{
+    worker_a.state = THREAD_READY;
+
+    if (!kthread_prepare(&worker_a, worker_a_entry, worker_a_stack, sizeof(worker_a_stack))) {
+        klogf("Scheduler: worker reuse preparation failed\n");
+        hcf();
+    }
+
+    if (!scheduler_add(&worker_a)) {
+        klogf("Scheduler: worker reuse registration failed\n");
+        hcf();
+    }
+
+    klogf("Scheduler: restarting thread A\n");
+
+    while (worker_a.state != THREAD_TERMINATED) {
+        scheduler_yield();
+    }
+
+    uint32_t reaped = scheduler_reap();
+    klogf("Scheduler: reclaimed %u reused thread\n", reaped);
+}
+
+/*
  * Runs the cooperative round-robin scheduler integration test.
  *
  * Assumes the scheduler has already been initialised and the bootstrap
@@ -85,4 +113,6 @@ void scheduler_test_run(void)
     uint32_t reaped = scheduler_reap();
 
     klogf("Scheduler: reaped %u terminated threads\n", reaped);
+
+    scheduler_test_reuse();
 }

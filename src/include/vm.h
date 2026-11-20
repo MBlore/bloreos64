@@ -77,4 +77,9 @@ bool vm_unmap_page(uint64_t virt_addr);
 // Returns a virtual address on success, or NULL on failure.
 void *vm_map_mmio(uint64_t phys_addr, size_t size);
 
+bool vm_create_address_space(uint64_t *page_table_root);
+
+bool vm_map_page_in(uint64_t page_table_root, uint64_t virt_addr,
+                    uint64_t phys_addr, uint64_t flags);
+
 #endif

@@ -88,6 +88,51 @@ static bool is_canonical_address(uint64_t virt_addr)
     return (virt_addr & upper_mask) == expected_upper;
 }
 
+/*
+ * Creates a new process address space with its own top-level page table.
+ *
+ * The lower half starts unmapped, while the kernel's higher-half mappings
+ * are inherited from the currently active address space.
+ *
+ * The returned page-table root is a physical address suitable for CR3.
+ * The caller owns the newly allocated root page.
+ */
+bool vm_create_address_space(uint64_t *page_table_root)
+{
+    if (page_table_root == NULL) {
+        return false;
+    }
+
+    if (maxphyaddr < 32 || maxphyaddr >= 64) {
+        return false;
+    }
+
+    // Allocate a new top-level page table.
+    uint64_t *new_root = kpalloc(1);
+
+    if (new_root == NULL) {
+        return false;
+    }
+
+    memset(new_root, 0, PAGE_SIZE);
+
+    // Locate the currently active top-level page table.
+    const uint64_t address_mask = ((1ULL << maxphyaddr) - 1) & ~(PAGE_SIZE - 1ULL);
+    const uint64_t current_root = get_cr3() & address_mask;
+
+    uint64_t *kernel_root = PHYS_TO_VIRT(current_root);
+
+    // Both paging modes divide their top-level table into lower and upper halves.
+    // Copy only the kernel half, preserving supervisor-only permissions.
+    for (size_t i = 256; i < 512; i++) {
+        new_root[i] = kernel_root[i];
+    }
+
+    *page_table_root = (uint64_t)new_root - vmm_higher_half_offset;
+
+    return true;
+}
+
 bool vm_translate(uint64_t virt_addr, uint64_t *phys_addr)
 {
     // Reject an invalid output pointer.
@@ -285,9 +330,14 @@ static bool page_permissions_compatible(uint64_t entry,
     return true;
 }
 
-bool vm_map_page(uint64_t virt_addr,
-                 uint64_t phys_addr,
-                 uint64_t flags)
+/*
+ * Maps a physical page into the specified address space.
+ *
+ * The page-table root is a physical address. Page-table structures
+ * are accessed through the kernel's higher-half direct mapping.
+ */
+static bool vm_map_page_internal(uint64_t page_table_root, uint64_t virt_addr,
+                                 uint64_t phys_addr, uint64_t flags)
 {
     // Reject unsupported flags before modifying any paging structures.
     if (flags & ~(uint64_t)PAGE_MAP_ALLOWED_FLAGS) {
@@ -322,12 +372,19 @@ bool vm_map_page(uint64_t virt_addr,
     const uint64_t addrmask =
         physical_address_mask & ~alignment_mask;
 
+    // Validate root.
+    if (page_table_root == 0 ||
+        (page_table_root & (PAGE_SIZE - 1)) ||
+        (page_table_root & ~physical_address_mask)) {
+        return false;
+    }
+
     // Track page tables allocated during this mapping operation.
     vm_allocation_t allocations[MAX_NEW_PAGE_TABLES];
     size_t allocation_count = 0;
 
     // Obtain the physical address of the root paging structure.
-    uint64_t pml4addr = get_cr3() & addrmask;
+    uint64_t pml4addr = page_table_root & addrmask;
 
     // In five-level paging, CR3 points to the PML5.
     if (get_cr4() & CR4_LA57) {
@@ -438,6 +495,38 @@ bool vm_map_page(uint64_t virt_addr,
     invlpg(virt_addr);
 
     return true;
+}
+
+/*
+ * Maps a physical page into the currently active address space.
+ */
+bool vm_map_page(uint64_t virt_addr, uint64_t phys_addr, uint64_t flags)
+{
+    const uint64_t address_mask = ((1ULL << maxphyaddr) - 1) & ~(PAGE_SIZE - 1ULL);
+    const uint64_t current_root = get_cr3() & address_mask;
+
+    return vm_map_page_internal(current_root, virt_addr, phys_addr, flags);
+}
+
+/*
+ * Maps a user-accessible physical page into a specified address space.
+ *
+ * The target page tables are modified without switching CR3.
+ */
+bool vm_map_page_in(uint64_t page_table_root, uint64_t virt_addr,
+                    uint64_t phys_addr, uint64_t flags)
+{
+    // Preserve our current policy of using the lower 48-bit user address range.
+    if (virt_addr < PAGE_SIZE || virt_addr >= 0x0000800000000000ULL) {
+        return false;
+    }
+
+    // Process mappings must be user-accessible.
+    if (!(flags & PAGE_USER)) {
+        return false;
+    }
+
+    return vm_map_page_internal(page_table_root, virt_addr, phys_addr, flags);
 }
 
 /*
