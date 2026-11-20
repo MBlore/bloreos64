@@ -9,6 +9,10 @@ usermode_kernel_rsp:
 usermode_kernel_return:
     .quad 0
 
+.global usermode_kernel_cr3
+usermode_kernel_cr3:
+    .quad 0
+
 .section .text
 
 .global usermode_enter
@@ -18,6 +22,7 @@ usermode_kernel_return:
 #
 # RDI = user instruction pointer
 # RSI = user stack pointer
+# RDX = process page-table root (physical address)
 usermode_enter:
     # Preserve the kernel's callee-saved registers.
     push %rbx
@@ -31,6 +36,13 @@ usermode_enter:
     mov %rsp, usermode_kernel_rsp(%rip)
     lea .return_to_kernel(%rip), %rax
     mov %rax, usermode_kernel_return(%rip)
+
+    # Remember the kernel's original address space.
+    mov %cr3, %rax
+    mov %rax, usermode_kernel_cr3(%rip)
+
+    # Switch to the process address space.
+    mov %rdx, %cr3
 
     # Set user data segments.
     mov $0x1B, %ax
@@ -67,8 +79,10 @@ usermode_enter:
 
 # Terminate the test user program and resume the kernel.
 #
-# Must only be called from the syscall handler after entering
-# through usermode_enter.
+# Restore the original kernel address space before returning.
 usermode_exit:
+    mov usermode_kernel_cr3(%rip), %rax
+    mov %rax, %cr3
+
     mov usermode_kernel_rsp(%rip), %rsp
     jmp *usermode_kernel_return(%rip)

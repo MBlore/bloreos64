@@ -54,4 +54,15 @@ mcopy -n -v -i "$MTOOLS_IMAGE" limine/BOOTIA32.EFI ::/EFI/BOOT
 # Copy custom resources.
 mcopy -n -v -i "$MTOOLS_IMAGE" Font.psf ::/
 
+# Install compiled userland executables into /bin.
+if [ -d "userland/bin" ]; then
+    mmd -i "$MTOOLS_IMAGE" ::/bin
+
+    for executable in userland/bin/*; do
+        if [ -f "$executable" ]; then
+            mcopy -o -i "$MTOOLS_IMAGE" "$executable" ::/bin/
+        fi
+    done
+fi
+
 echo "FAT32 boot image created successfully."

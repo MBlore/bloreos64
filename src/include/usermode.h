@@ -22,7 +22,7 @@
 #include <stdint.h>
 
 bool usermode_prepare(void);
-void usermode_enter(uint64_t entry, uint64_t stack);
+void usermode_enter(uint64_t entry, uint64_t stack, uint64_t page_table_root);
 void usermode_exit(void) __attribute__((noreturn));
 
 #endif

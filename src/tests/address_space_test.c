@@ -22,6 +22,7 @@
 #include <str.h>
 #include <kernel.h>
 #include <process.h>
+#include <usermode.h>
 
 #include "tests.h"
 
@@ -127,4 +128,25 @@ cleanup:
     klogf("Process memory test: %s\n", passed ? "PASS" : "FAIL");
 
     return passed;
+}
+
+/*
+ * Verifies that Ring 3 execution returns to the original kernel
+ * address space after the user program invokes its exit syscall.
+ */
+bool address_space_usermode_test_run(void)
+{
+    const uint64_t kernel_root = vm_get_address_space();
+
+    klogf("User-mode transition test: ENTERING\n");
+
+    usermode_enter(USER_CODE_BASE, USER_STACK_TOP, kernel_root);
+
+    if (vm_get_address_space() != kernel_root) {
+        klogf("User-mode transition test: CR3 RESTORE FAILED\n");
+        return false;
+    }
+
+    klogf("User-mode transition test: PASS\n");
+    return true;
 }

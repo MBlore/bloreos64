@@ -232,18 +232,14 @@ void kernel_main(void)
 
     vm_init();
 
-    if (!usermode_prepare()) {
-        klogf("User-mode memory preparation: FAIL\n");
-        hcf();
-    }
-
     scheduler_init();
 
     init_kernel_scheduler();
 
-    scheduler_test_run();
-    address_space_test_run();
-    address_space_memory_test_run();
+    //scheduler_test_run();
+    //address_space_test_run();
+    //address_space_memory_test_run();
+    //address_space_usermode_test_run();
 
     nvme_init();
 
@@ -267,6 +263,8 @@ void kernel_main(void)
             kprintf("Data filesystem: %s\n", os_error_string(result));
         }
     }
+    
+    elf_execution_test_run();
 
     klogf("System ready. Type 'help' for commands.\n\n");
 

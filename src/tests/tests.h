@@ -19,7 +19,11 @@
 #define _BLOREOS_SCHEDULER_TEST_H
 
 void scheduler_test_run(void);
+
 bool address_space_test_run(void);
 bool address_space_memory_test_run(void);
+bool address_space_usermode_test_run(void);
+
+bool elf_execution_test_run(void);
 
 #endif
