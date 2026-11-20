@@ -26,7 +26,14 @@ ISR_Handler_PS2:
     # C functions expect the direction flag to be cleared on entry.
     cld
 
+    # Preserve the original stack pointer and align the stack for C.
+    mov %rsp, %r12
+    and $-16, %rsp
+
     call _handle_keyboard
+
+    # Restore the original stack pointer before restoring registers.
+    mov %r12, %rsp
 
     # Restore general registers.
     pop %rax

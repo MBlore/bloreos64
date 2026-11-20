@@ -49,6 +49,7 @@
 #include <vfs.h>
 #include <error.h>
 #include <time.h>
+#include <usermode.h>
 
 #include "kernel.h"
 
@@ -60,71 +61,6 @@ CQueue_t *q_keyboard;
 // base revision described by the Limine boot protocol specification.
 // See specification for further info.
 LIMINE_BASE_REVISION(1)
-
-/*
- * Tests VFS file creation, writing, seeking, reading and closing.
- *
- * Uses the secondary data partition to avoid modifying boot files.
- */
-static void run_vfs_file_test(void)
-{
-    const char *path = "/volumes/data/vfstest.txt";
-    const char *message = "Hello from the BloreOS VFS!";
-    char buffer[128] = {0};
-    vfs_file_t file = {0};
-
-    os_error_t result = vfs_open(path, VFS_OPEN_READ | VFS_OPEN_WRITE | VFS_OPEN_CREATE, &file);
-
-    if (result != OS_OK) {
-        kprintf("VFS open: FAIL (%s)\n", os_error_string(result));
-        return;
-    }
-
-    kprintf("VFS open: PASS\n");
-
-    // Overwrite from the beginning, including on subsequent boots.
-    if (vfs_seek(&file, 0, VFS_SEEK_SET) != 0) {
-        kprintf("VFS seek: FAIL\n");
-        vfs_close(&file);
-        return;
-    }
-
-    size_t length = strlen(message);
-    int64_t written = vfs_write(&file, message, length);
-
-    if (written != (int64_t)length) {
-        kprintf("VFS write: FAIL\n");
-        vfs_close(&file);
-        return;
-    }
-
-    kprintf("VFS write: PASS\n");
-
-    if (vfs_seek(&file, 0, VFS_SEEK_SET) != 0) {
-        kprintf("VFS seek: FAIL\n");
-        vfs_close(&file);
-        return;
-    }
-
-    kprintf("VFS seek: PASS\n");
-
-    int64_t bytes_read = vfs_read(&file, buffer, length);
-
-    if (bytes_read != (int64_t)length || memcmp(buffer, message, length) != 0) {
-        kprintf("VFS read: FAIL\n");
-        vfs_close(&file);
-        return;
-    }
-
-    buffer[bytes_read] = '\0';
-
-    kprintf("VFS read: PASS\n");
-    kprintf("VFS contents: %s\n", buffer);
-
-    vfs_close(&file);
-
-    kprintf("VFS close: PASS\n");
-}
 
 /*
  * Ensures that a directory exists at the supplied VFS path.
@@ -183,66 +119,6 @@ static os_error_t init_data_filesystem(void)
     return vfs_mount("/volumes/data", &fat32_vfs_driver, &data_volume);
 }
 
-
-/*
- * Verifies that data written through the VFS can be read back
- * after the original file handle has been closed.
- */
-static void run_vfs_persistence_test(void)
-{
-    const char *path = "/volumes/data/persist.txt";
-    const char *expected = "BloreOS persistent file test";
-    size_t length = strlen(expected);
-    char buffer[64] = {0};
-    vfs_file_t file = {0};
-
-    os_error_t result = vfs_open(path, VFS_OPEN_READ, &file);
-
-    if (result != OS_OK) {
-        kprintf("VFS persistence reopen: FAIL (%s)\n", os_error_string(result));
-        return;
-    }
-
-    int64_t count = vfs_read(&file, buffer, length);
-    vfs_close(&file);
-
-    if (count != (int64_t)length || memcmp(buffer, expected, length) != 0) {
-        kprintf("VFS persistence verification: FAIL\n");
-        return;
-    }
-
-    kprintf("VFS persistence verification: PASS\n");
-}
-
-/*
- * Integration-tests FAT32 directory creation and deletion
- * using the NVMe-backed FAT32 partition.
- */
-/*
-static void run_test(void)
-{
-    os_error_t result;
-
-    result = vfs_mkdir("/VFSTEST");
-
-    if (result != OS_OK) {
-        kprintf("VFS mkdir: %s\n", os_error_string(result));
-        return;
-    }
-
-    kprintf("VFS mkdir: PASS\n");
-
-    result = vfs_rmdir("/VFSTEST");
-
-    if (result != OS_OK) {
-        kprintf("VFS rmdir: %s\n", os_error_string(result));
-        return;
-    }
-
-    kprintf("VFS rmdir: PASS\n");
-    kprintf("VFS FAT32 integration: PASS\n");
-}*/
-
 /*
  * Initialises the root FAT32 filesystem and registers it with VFS.
  */
@@ -266,42 +142,6 @@ static os_error_t init_root_filesystem(void)
     return vfs_mount("/", &fat32_vfs_driver, &root_volume);
 }
 
-/*
- * Tests file creation, deletion and subsequent metadata lookup.
- *
- * Uses a dedicated file on the secondary data partition.
- */
-static void run_vfs_unlink_test(void)
-{
-    const char *path = "/volumes/data/unlink-test.txt";
-    vfs_file_t file = {0};
-    vfs_stat_t stat;
-
-    os_error_t result = vfs_open(path, VFS_OPEN_WRITE | VFS_OPEN_CREATE, &file);
-
-    if (result != OS_OK) {
-        kprintf("VFS unlink setup: FAIL (%s)\n", os_error_string(result));
-        return;
-    }
-
-    vfs_close(&file);
-
-    result = vfs_unlink(path);
-
-    if (result != OS_OK) {
-        kprintf("VFS unlink: FAIL (%s)\n", os_error_string(result));
-        return;
-    }
-
-    result = vfs_stat(path, &stat);
-
-    if (result == OS_ERR_NOT_FOUND) {
-        kprintf("VFS unlink: PASS\n");
-    } else {
-        kprintf("VFS unlink verification: FAIL (%s)\n", os_error_string(result));
-    }
-}
-
 void kernel_main(void)
 {
     // Ensure the bootloader actually understands our base revision (see spec).
@@ -313,8 +153,9 @@ void kernel_main(void)
     term_init();
 
     term_fgcolor(0x00FF00);
-    kprintf("BloreOS Alpha v0.01\n\n");
+    klogf("BloreOS Alpha v0.01\n\n");
     term_fgcolor(TERM_DEFAULT_FGCOLOR);
+    klogf("Initializing...\n");
 
     report_cpu_details();
 
@@ -359,6 +200,11 @@ void kernel_main(void)
 
     vm_init();
 
+    if (!usermode_prepare()) {
+        klogf("User-mode memory preparation: FAIL\n");
+        hcf();
+    }
+
     nvme_init();
 
     // Discover partitions on all registered block devices.
@@ -382,9 +228,7 @@ void kernel_main(void)
         }
     }
 
-    run_vfs_file_test();
-    run_vfs_persistence_test();
-    run_vfs_unlink_test();
+    klogf("System ready. Type 'help' for commands.\n\n");
 
     term_show_prompt();
    

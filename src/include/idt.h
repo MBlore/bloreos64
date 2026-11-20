@@ -26,6 +26,10 @@
 #define KEYBOARD_VECTOR 33
 #define MOUSE_VECTOR 34
 #define LAPICTMR_VECTOR 35
+#define SYSCALL_VECTOR 0x80
+#define PRIVILEGE_RING3 0xEE
+
+extern void ISR_Handler_Syscall(void);
 
 struct idt_entry
 {

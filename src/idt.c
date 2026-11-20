@@ -157,6 +157,9 @@ void idt_init()
     _idt_set_gate(KEYBOARD_VECTOR, ISR_Handler_PS2, PRIVELEGE_RING0);
     _idt_set_gate(LAPICTMR_VECTOR, ISR_Handler_LAPIC_Timer, PRIVELEGE_RING0);
 
+    // Allow user-space programs to enter the kernel through interrupt 0x80.
+    _idt_set_gate(SYSCALL_VECTOR, ISR_Handler_Syscall, PRIVILEGE_RING3);
+
     _idt_load();
     kprintf("Loading IDT at: 0x%X\n", &idtp);
 }

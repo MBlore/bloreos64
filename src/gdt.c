@@ -21,9 +21,15 @@
 #include <gdt.h>
 #include <cpu.h>
 #include <str.h>
+#include <string.h>
+
+#define TSS_STACK_SIZE 16384
 
 struct gdt_entry gdt[GDT_ENTRIES];
 struct gdt_ptr gdtp;
+
+static struct tss64 tss;
+static uint8_t tss_stack[TSS_STACK_SIZE] __attribute__((aligned(16)));
 
 /* Set an entry in the GDT */
 void set_gdt_entry(int num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran)
@@ -64,6 +70,40 @@ void _gdt_reload()
         : "m"(gdtp)
         : "rax", "memory"
     );
+
+    // Load the Task Register with our TSS selector.
+    uint16_t tss_selector = GDT_TSS_SELECTOR;
+    asm volatile("ltr %0" : : "rm"(tss_selector) : "memory");
+}
+
+/*
+ * Installs a 64-bit TSS descriptor into GDT entries 5 and 6.
+ *
+ * The TSS provides the Ring 0 stack used when the CPU handles
+ * interrupts and exceptions originating from user mode.
+ */
+static void gdt_install_tss(void)
+{
+    uint64_t base = (uint64_t)&tss;
+    uint32_t limit = sizeof(tss) - 1;
+
+    // Configure the Ring 0 stack and disable the I/O permission bitmap.
+    tss.rsp0 = (uint64_t)(tss_stack + sizeof(tss_stack));
+    tss.iomap_base = sizeof(tss);
+
+    // Clear both entries occupied by the 16-byte TSS descriptor.
+    memset(&gdt[5], 0, sizeof(struct gdt_entry) * 2);
+
+    gdt[5].limit_low = limit & 0xFFFF;
+    gdt[5].base_low = base & 0xFFFF;
+    gdt[5].base_middle = (base >> 16) & 0xFF;
+    gdt[5].access = 0x89;
+    gdt[5].granularity = (limit >> 16) & 0x0F;
+    gdt[5].base_high = (base >> 24) & 0xFF;
+
+    // Upper 32 bits of the 64-bit TSS base address.
+    uint32_t base_upper = (uint32_t)(base >> 32);
+    memcpy(&gdt[6], &base_upper, sizeof(base_upper));
 }
 
 /* Initialize the GDT with minimal config */
@@ -80,6 +120,20 @@ void init_gdt()
 
     // Kernal Data segment (0x10).
     set_gdt_entry(2, 0, 0xFFFFFFFF, (SEGMENT_PRESENT | DESCRIPTOR_PRIVILEGE0 | DESCRIPTOR_TYPE_DATA | SEGMENT_WRITABLE), (SEGMENT_GRANULARITY_BYTE | SEGMENT_SIZE_16BIT));
+
+    // User Data segment (0x18, Ring 3 selector 0x1B).
+    set_gdt_entry(3, 0, 0xFFFFFFFF,
+                SEGMENT_PRESENT | DESCRIPTOR_PRIVILEGE3 | DESCRIPTOR_TYPE_DATA | SEGMENT_WRITABLE,
+                SEGMENT_GRANULARITY_BYTE | SEGMENT_SIZE_16BIT);
+
+    // User Code segment (0x20, Ring 3 selector 0x23).
+    set_gdt_entry(4, 0, 0xFFFFFFFF,
+                SEGMENT_PRESENT | DESCRIPTOR_PRIVILEGE3 | DESCRIPTOR_TYPE_CODE |
+                SEGMENT_EXECUTABLE | SEGMENT_READABLE,
+                SEGMENT_LONG_MODE);
+
+    // Install the 64-bit Task State Segment.
+    gdt_install_tss();
 
     _gdt_reload();
 

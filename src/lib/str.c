@@ -335,9 +335,24 @@ int strcmp(const char *l, const char *r)
 }
 
 /*
-    Kernel log - currently writes to serial COM1 and the terminal.
+    Kernel print - currently writes to serial COM1.
 */
 void kprintf(const char format[], ...)
+{
+    char buffer[256];
+
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+    write_serial_str(PORT_COM1, buffer);
+}
+
+/*
+    Kernel log - currently writes to serial COM1 and terminal.
+*/
+void klogf(const char format[], ...)
 {
     char buffer[256];
 

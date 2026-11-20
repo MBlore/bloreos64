@@ -440,6 +440,33 @@ bool vm_map_page(uint64_t virt_addr,
     return true;
 }
 
+/*
+ * Maps a physical page into the user portion of virtual memory.
+ *
+ * User mappings must be page-aligned and reside in the lower canonical
+ * address range. Kernel mappings remain supervisor-only.
+ */
+bool vm_map_user_page(uint64_t virt_addr, uint64_t phys_addr, bool writable)
+{
+    // Restrict user mappings to the lower 48-bit canonical address range.
+    if (virt_addr >= 0x0000800000000000ULL) {
+        return false;
+    }
+
+    // Reject the null page.
+    if (virt_addr < PAGE_SIZE) {
+        return false;
+    }
+
+    uint64_t flags = PAGE_USER;
+
+    if (writable) {
+        flags |= PAGE_RW;
+    }
+
+    return vm_map_page(virt_addr, phys_addr, flags);
+}
+
 bool vm_unmap_page(uint64_t virt_addr)
 {
     // The virtual address must be aligned to a 4 KiB page.
@@ -718,8 +745,6 @@ void vm_init()
     uint64_t val = cpu_get_address_widths();
     maxphyaddr = val & 0xFF;
     maxlinaddr = val >> 8 & 0xFF;
-    kprintf("VMEM: MAXPHYADDR: %d bits\n", maxphyaddr);
-    kprintf("VMEM: MAXLINADDR: %d bits\n", maxlinaddr);
 
     // Determine whether the reserved MMIO region is available.
     mmio_region_available = is_mmio_region_available();

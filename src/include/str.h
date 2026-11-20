@@ -48,6 +48,7 @@ int strncmp(const char *s1, const char *s2, size_t n);
 int snprintf(char buffer[], size_t size, const char format[], ...);
 int vsnprintf(char buffer[], size_t size, const char format[], va_list args);
 void kprintf(const char format[], ...);
+void klogf(const char format[], ...);
 
 void sprint_binary8(char s[], uint8_t ch);
 void sprint_binary16(char s[], uint16_t ch);

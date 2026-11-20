@@ -32,6 +32,10 @@
 #define PAGE_PCD (1ULL << 4)
 #define PAGE_PAT (1ULL << 7)
 
+#define USER_CODE_BASE  0x0000000000400000ULL
+#define USER_STACK_TOP  0x0000000000800000ULL
+#define USER_STACK_SIZE (4 * 4096)
+
 // Architectural PAT memory type encodings.
 typedef enum {
     VM_MEMORY_UC       = 0x00,
@@ -60,6 +64,8 @@ bool vm_translate(uint64_t virt_addr, uint64_t *phys_addr);
 bool vm_map_page(uint64_t virt_addr,
                  uint64_t phys_addr,
                  uint64_t flags);
+
+bool vm_map_user_page(uint64_t virt_addr, uint64_t phys_addr, bool writable);
 
 // Remove a 4 KiB virtual memory mapping.
 // The virtual address must be page-aligned.
