@@ -1,5 +1,7 @@
 # Nuke built-in rules and variables.
 override MAKEFLAGS += -rR
+
+.DEFAULT_GOAL := all
  
 # This is the name that our final kernel executable will have.
 # Change as needed.
@@ -96,10 +98,29 @@ override ASFILES := $(shell cd src && find -L * -type f -name '*.S')
 override NASMFILES := $(shell cd src && find -L * -type f -name '*.asm')
 override OBJ := $(addprefix obj/,$(CFILES:.c=.c.o) $(ASFILES:.S=.S.o) $(NASMFILES:.asm=.asm.o))
 override HEADER_DEPS := $(addprefix obj/,$(CFILES:.c=.c.d) $(ASFILES:.S=.S.d))
- 
+
+# Build each userland program independently.
+USERLAND_DIRS := $(sort $(dir $(wildcard userland/*/main.c)))
+USERLAND_PROGRAMS := $(patsubst userland/%/main.c,userland/bin/%,$(wildcard userland/*/main.c))
+
+USERLAND_CFLAGS := -O2 -Wall -Wextra -Werror -std=gnu11 \
+    -ffreestanding -fno-stack-protector -fno-pie \
+    -fno-asynchronous-unwind-tables -fno-unwind-tables \
+    -m64 -mno-red-zone
+
+USERLAND_LDFLAGS := -nostdlib -static -z max-page-size=0x1000
+
+.PHONY: userland
+userland: $(USERLAND_PROGRAMS)
+
+userland/bin/%: userland/%/main.c userland/%/linker.ld GNUmakefile
+	mkdir -p userland/bin
+	$(CC) $(USERLAND_CFLAGS) -c $< -o userland/$*/main.o
+	$(LD) $(USERLAND_LDFLAGS) -T userland/$*/linker.ld -o $@ userland/$*/main.o
+
 # Default target.
 .PHONY: all
-all: bin/$(KERNEL) deploy
+all: deploy
  
 # Link rules for the final kernel executable.
 bin/$(KERNEL): GNUmakefile linker.ld $(OBJ)
@@ -127,16 +148,14 @@ obj/%.asm.o: src/%.asm GNUmakefile
 .PHONY: dump
 dump:
 	objdump -d bin/bloreos > bin/code.asm
-
-deploy:
-	./build-iso.sh
-	./build-hdd.sh
  
 # Remove object files and the final executable.
 .PHONY: clean
 clean:
 	rm -rf bin obj
 	rm -f $(IMAGE_NAME).iso $(IMAGE_NAME).hdd
+	rm -rf userland/bin
+	rm -f userland/*/main.o
 
 .PHONY: run
 run: $(IMAGE_NAME).hdd data.hdd
@@ -185,3 +204,8 @@ test:
 .PHONY: data
 data:
 	./build-data.sh
+
+.PHONY: deploy
+deploy: bin/$(KERNEL) userland
+	./build-iso.sh
+	./build-hdd.sh
