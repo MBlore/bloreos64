@@ -36,9 +36,13 @@
 
 // Model-Specific Register identifiers.
 #define IA32_PAT 0x277
+#define IA32_EFER 0xC0000080
+#define EFER_NXE  (1ULL << 11)
 
 // CPUID leaf for processor feature information.
 #define CPUID_FEATURES 0x01
+#define CPUID_EXTENDED_FEATURES 0x80000001
+#define CPUID_EDX_NX (1U << 20)
 
 // PAT support flag in the CPUID feature EDX register.
 #define CPUID_EDX_PAT (1U << 16)
@@ -110,6 +114,16 @@ static inline uint64_t read_msr(uint32_t msr_id)
     );
 
     return ((uint64_t) high << 32) | low;
+}
+
+static inline void write_msr(uint32_t msr_id, uint64_t value)
+{
+    asm volatile (
+        "wrmsr"
+        :
+        : "c"(msr_id), "a"((uint32_t)value), "d"((uint32_t)(value >> 32))
+        : "memory"
+    );
 }
 
 /*

@@ -21,6 +21,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <process.h>
 
 #define ELF_LOADER_MAX_SEGMENTS 16
 
@@ -39,5 +40,10 @@ typedef struct elf_load_plan {
 } elf_load_plan_t;
 
 bool elf_loader_plan(const void *data, size_t size, elf_load_plan_t *plan);
+bool elf_loader_allocate_segments(process_t *process, const elf_load_plan_t *plan);
+bool elf_loader_copy_segments(process_t *process, const void *data, size_t size,
+                              const elf_load_plan_t *plan);
+bool elf_loader_load(process_t *process, const void *data, size_t size, uint64_t *entry_point);
+bool elf_loader_allocate_stack(process_t *process);
 
 #endif

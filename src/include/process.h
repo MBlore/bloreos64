@@ -19,12 +19,25 @@
 #define _BLOREOS_PROCESS_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef uint64_t pid_t;
+
+typedef struct process_page {
+    uint64_t virtual_address;
+    void *physical_page;
+    struct process_page *next;
+} process_page_t;
 
 typedef struct process {
     pid_t pid;
     uint64_t page_table_root;
+    uint64_t user_stack_pointer;
+    process_page_t *owned_pages;
 } process_t;
+
+bool process_alloc_page(process_t *process, uint64_t virt_addr, uint64_t flags);
+void process_free_pages(process_t *process);
+void *process_find_page(const process_t *process, uint64_t virt_addr);
 
 #endif

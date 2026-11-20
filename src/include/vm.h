@@ -31,6 +31,7 @@
 #define PAGE_PWT (1ULL << 3)
 #define PAGE_PCD (1ULL << 4)
 #define PAGE_PAT (1ULL << 7)
+#define PAGE_NX (1ULL << 63)
 
 #define USER_CODE_BASE  0x0000000000400000ULL
 #define USER_STACK_TOP  0x0000000000800000ULL
@@ -81,5 +82,14 @@ bool vm_create_address_space(uint64_t *page_table_root);
 
 bool vm_map_page_in(uint64_t page_table_root, uint64_t virt_addr,
                     uint64_t phys_addr, uint64_t flags);
+
+bool vm_unmap_page_in(uint64_t page_table_root, uint64_t virt_addr);
+
+bool vm_destroy_address_space(uint64_t page_table_root);
+
+bool vm_nx_supported(void);
+
+uint64_t vm_get_address_space(void);
+bool vm_switch_address_space(uint64_t page_table_root);
 
 #endif

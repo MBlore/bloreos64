@@ -55,7 +55,7 @@
 #include <thread.h>
 #include <scheduler.h>
 
-#include "tests/scheduler_test.h"
+#include "tests/tests.h"
 
 #include "kernel.h"
 
@@ -242,6 +242,8 @@ void kernel_main(void)
     init_kernel_scheduler();
 
     scheduler_test_run();
+    address_space_test_run();
+    address_space_memory_test_run();
 
     nvme_init();
 

@@ -37,7 +37,7 @@
 #define PAGE_PRESENT    0x1
 #define PAGE_PS (1ULL << 7)
 
-#define PAGE_MAP_ALLOWED_FLAGS (PAGE_RW | PAGE_USER | PAGE_PWT | PAGE_PCD | PAGE_PAT)
+#define PAGE_MAP_ALLOWED_FLAGS (PAGE_RW | PAGE_USER | PAGE_PWT | PAGE_PCD | PAGE_PAT | PAGE_NX)
 
 #define PAGE_SIZE_2MB (2ULL * 1024 * 1024)
 #define PAGE_SIZE_1GB (1ULL * 1024 * 1024 * 1024)
@@ -68,6 +68,16 @@ static bool mmio_region_available = false;
 uint32_t maxphyaddr;
 uint32_t maxlinaddr;
 
+static bool nx_supported = false;
+
+/*
+ * Returns whether NX execution protection is enabled on the current CPU.
+ */
+bool vm_nx_supported(void)
+{
+    return nx_supported;
+}
+
 static bool is_canonical_address(uint64_t virt_addr)
 {
     // Determine the virtual address width from the active paging mode.
@@ -86,6 +96,39 @@ static bool is_canonical_address(uint64_t virt_addr)
         (virt_addr & sign_bit) ? upper_mask : 0;
 
     return (virt_addr & upper_mask) == expected_upper;
+}
+
+/*
+ * Detects and enables the NX page-table permission when supported.
+ *
+ * NX is optional for kernel operation. Unsupported CPUs continue
+ * without execute-disable protection.
+ */
+static void vm_init_nx(void)
+{
+    uint32_t eax;
+    uint32_t edx;
+
+    cpuid(CPUID_EXTENDED_FEATURES, &eax, &edx);
+
+    if (!(edx & CPUID_EDX_NX)) {
+        kprintf("VMEM: Warning - NX is not supported.\n");
+        return;
+    }
+
+    uint64_t efer = read_msr(IA32_EFER);
+
+    if (!(efer & EFER_NXE)) {
+        write_msr(IA32_EFER, efer | EFER_NXE);
+    }
+
+    nx_supported = (read_msr(IA32_EFER) & EFER_NXE) != 0;
+
+    if (nx_supported) {
+        kprintf("VMEM: NX enabled.\n");
+    } else {
+        kprintf("VMEM: Warning - NX could not be enabled.\n");
+    }
 }
 
 /*
@@ -339,6 +382,10 @@ static bool page_permissions_compatible(uint64_t entry,
 static bool vm_map_page_internal(uint64_t page_table_root, uint64_t virt_addr,
                                  uint64_t phys_addr, uint64_t flags)
 {
+    if ((flags & PAGE_NX) && !nx_supported) {
+        return false;
+    }
+
     // Reject unsupported flags before modifying any paging structures.
     if (flags & ~(uint64_t)PAGE_MAP_ALLOWED_FLAGS) {
         return false;
@@ -447,6 +494,7 @@ static bool vm_map_page_internal(uint64_t page_table_root, uint64_t virt_addr,
 
     // Refuse to overwrite an existing 1 GiB mapping.
     if (*pdpte & PAGE_PS) {
+        rollback_page_tables(allocations, allocation_count, virt_addr);
         return false;
     }
 
@@ -471,6 +519,7 @@ static bool vm_map_page_internal(uint64_t page_table_root, uint64_t virt_addr,
 
     // Refuse to overwrite an existing 2 MiB mapping.
     if (*pde & PAGE_PS) {
+        rollback_page_tables(allocations, allocation_count, virt_addr);
         return false;
     }
 
@@ -485,6 +534,7 @@ static bool vm_map_page_internal(uint64_t page_table_root, uint64_t virt_addr,
 
     // Never overwrite an existing mapping.
     if (*pte & PAGE_PRESENT) {
+        rollback_page_tables(allocations, allocation_count, virt_addr);
         return false;
     }
 
@@ -556,8 +606,20 @@ bool vm_map_user_page(uint64_t virt_addr, uint64_t phys_addr, bool writable)
     return vm_map_page(virt_addr, phys_addr, flags);
 }
 
-bool vm_unmap_page(uint64_t virt_addr)
+static bool vm_unmap_page_internal(uint64_t page_table_root, uint64_t virt_addr)
 {
+    if (maxphyaddr < 32 || maxphyaddr >= 64) {
+        return false;
+    }
+
+    const uint64_t physical_address_mask = (1ULL << maxphyaddr) - 1;
+
+    if (page_table_root == 0 ||
+        (page_table_root & (PAGE_SIZE - 1)) ||
+        (page_table_root & ~physical_address_mask)) {
+        return false;
+    }
+
     // The virtual address must be aligned to a 4 KiB page.
     const uint64_t alignment_mask = PAGE_SIZE - 1;
 
@@ -574,7 +636,7 @@ bool vm_unmap_page(uint64_t virt_addr)
     const uint64_t addrmask = ((1ULL << maxphyaddr) - 1) & ~alignment_mask;
 
     // Obtain the physical address of the root paging structure.
-    uint64_t pml4addr = get_cr3() & addrmask;
+    uint64_t pml4addr = page_table_root & addrmask;
 
     // Traverse the additional paging level if LA57 is enabled.
     if (get_cr4() & CR4_LA57) {
@@ -628,6 +690,120 @@ bool vm_unmap_page(uint64_t virt_addr)
 
     // Invalidate the cached translation on the local CPU.
     invlpg(virt_addr);
+
+    return true;
+}
+
+/*
+ * Removes a 4 KiB mapping from the currently active address space.
+ */
+bool vm_unmap_page(uint64_t virt_addr)
+{
+    if (maxphyaddr < 32 || maxphyaddr >= 64) {
+        return false;
+    }
+
+    const uint64_t address_mask = ((1ULL << maxphyaddr) - 1) & ~(PAGE_SIZE - 1ULL);
+    const uint64_t current_root = get_cr3() & address_mask;
+
+    return vm_unmap_page_internal(current_root, virt_addr);
+}
+
+/*
+ * Removes a user-space mapping from a specified process address space.
+ *
+ * This does not release the mapped physical page.
+ */
+bool vm_unmap_page_in(uint64_t page_table_root, uint64_t virt_addr)
+{
+    // Preserve the lower 48-bit user address-space policy.
+    if (virt_addr < PAGE_SIZE || virt_addr >= 0x0000800000000000ULL) {
+        return false;
+    }
+
+    return vm_unmap_page_internal(page_table_root, virt_addr);
+}
+
+/*
+ * Recursively releases private page-table structures.
+ *
+ * Level 1 contains leaf PTEs, which reference physical data pages.
+ * Those data pages are not freed here.
+ *
+ * Large-page entries at levels 2 and 3 are also leaves.
+ */
+static void vm_free_page_table(uint64_t table_phys, unsigned int level, uint64_t address_mask)
+{
+    uint64_t *table = PHYS_TO_VIRT(table_phys);
+
+    if (level > 1) {
+        for (size_t i = 0; i < 512; i++) {
+            const uint64_t entry = table[i];
+
+            if (!(entry & PAGE_PRESENT)) {
+                continue;
+            }
+
+            // A 2 MiB or 1 GiB mapping is a leaf, not another page table.
+            if ((level == 2 || level == 3) && (entry & PAGE_PS)) {
+                continue;
+            }
+
+            const uint64_t child_phys = entry & address_mask;
+            vm_free_page_table(child_phys, level - 1, address_mask);
+        }
+    }
+
+    kfree(table);
+}
+
+/*
+ * Destroys an inactive process address space.
+ *
+ * Only the lower half of the top-level page table is private.
+ * The upper half contains shared kernel mappings and must not be freed.
+ *
+ * The caller must release process-owned physical data pages separately.
+ * The address space must not be active on any CPU.
+ */
+bool vm_destroy_address_space(uint64_t page_table_root)
+{
+    if (maxphyaddr < 32 || maxphyaddr >= 64) {
+        return false;
+    }
+
+    const uint64_t address_mask = ((1ULL << maxphyaddr) - 1) & ~(PAGE_SIZE - 1ULL);
+
+    if (page_table_root == 0 ||
+        (page_table_root & (PAGE_SIZE - 1)) ||
+        (page_table_root & ~address_mask)) {
+        return false;
+    }
+
+    // Never destroy the address space currently used by this CPU.
+    if ((get_cr3() & address_mask) == page_table_root) {
+        return false;
+    }
+
+    const unsigned int root_level = (get_cr4() & CR4_LA57) ? 5 : 4;
+    uint64_t *root = PHYS_TO_VIRT(page_table_root);
+
+    // The upper half is shared with the kernel.
+    for (size_t i = 0; i < 256; i++) {
+        const uint64_t entry = root[i];
+
+        if (!(entry & PAGE_PRESENT)) {
+            continue;
+        }
+
+        const uint64_t child_phys = entry & address_mask;
+        vm_free_page_table(child_phys, root_level - 1, address_mask);
+
+        root[i] = 0;
+    }
+
+    // Release the process's top-level page table.
+    kfree(root);
 
     return true;
 }
@@ -807,6 +983,8 @@ void vm_init()
 {
     kprintf("VMEM: Initializing...\n");
 
+    vm_init_nx();
+
     mmio_next_address = VM_MMIO_START;
     
     if (is_paging_enabled()) {
@@ -842,4 +1020,48 @@ void vm_init()
         kprintf("VMEM: MMIO Virtual address region available.\n");
     else
         kprintf("VMEM: MMIO Virtual address region unavailable.\n");
+}
+
+/*
+ * Returns the physical address of the currently active page-table root.
+ *
+ * CR3 may contain additional control bits, so these are masked out.
+ */
+uint64_t vm_get_address_space(void)
+{
+    const uint64_t address_mask = ((1ULL << maxphyaddr) - 1ULL) & ~(PAGE_SIZE - 1ULL);
+
+    return get_cr3() & address_mask;
+}
+
+/*
+ * Switches the current CPU to another address space.
+ *
+ * The caller must supply a valid page-table root containing all kernel
+ * mappings needed to continue execution.
+ *
+ * This function does not validate the contents of the page tables.
+ */
+bool vm_switch_address_space(uint64_t page_table_root)
+{
+    if (maxphyaddr < 32 || maxphyaddr >= 64) {
+        return false;
+    }
+
+    const uint64_t address_mask = ((1ULL << maxphyaddr) - 1ULL) & ~(PAGE_SIZE - 1ULL);
+
+    if (page_table_root == 0 ||
+        (page_table_root & (PAGE_SIZE - 1ULL)) != 0 ||
+        (page_table_root & ~address_mask) != 0) {
+        return false;
+    }
+
+    asm volatile (
+        "mov %0, %%cr3"
+        :
+        : "r"(page_table_root)
+        : "memory"
+    );
+
+    return true;
 }
