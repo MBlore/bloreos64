@@ -50,11 +50,20 @@
 #include <error.h>
 #include <time.h>
 #include <usermode.h>
+#include <process.h>
+#include <kthread.h>
+#include <thread.h>
+#include <scheduler.h>
+
+#include "tests/scheduler_test.h"
 
 #include "kernel.h"
 
+static thread_t main_thread;
+
 static fat32_volume_t root_volume;
 static fat32_volume_t data_volume;
+
 CQueue_t *q_keyboard;
 
 // Set the base revision to 1, this is recommended as this is the latest
@@ -142,6 +151,29 @@ static os_error_t init_root_filesystem(void)
     return vfs_mount("/", &fat32_vfs_driver, &root_volume);
 }
 
+/*
+ * Initialises cooperative scheduling and registers the bootstrap kernel thread.
+ */
+static void init_kernel_scheduler(void)
+{
+    scheduler_init();
+
+    memset(&main_thread, 0, sizeof(main_thread));
+
+    main_thread.tid = 0;
+    main_thread.state = THREAD_READY;
+
+    if (!scheduler_add(&main_thread)) {
+        klogf("Failed to register main kernel thread\n");
+        hcf();
+    }
+
+    main_thread.state = THREAD_RUNNING;
+    scheduler_set_current(&main_thread);
+
+    klogf("Scheduler: current thread = %lu\n", scheduler_current()->tid);
+}
+
 void kernel_main(void)
 {
     // Ensure the bootloader actually understands our base revision (see spec).
@@ -204,6 +236,12 @@ void kernel_main(void)
         klogf("User-mode memory preparation: FAIL\n");
         hcf();
     }
+
+    scheduler_init();
+
+    init_kernel_scheduler();
+
+    scheduler_test_run();
 
     nvme_init();
 
