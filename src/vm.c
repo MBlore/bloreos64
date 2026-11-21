@@ -1065,3 +1065,86 @@ bool vm_switch_address_space(uint64_t page_table_root)
 
     return true;
 }
+
+/*
+ * Translates a user-accessible virtual address to a physical address.
+ *
+ * Every paging level must be present and marked user-accessible.
+ */
+bool vm_translate_user(uint64_t virt_addr, uint64_t *phys_addr)
+{
+    if (phys_addr == NULL) {
+        return false;
+    }
+
+    if (virt_addr < PAGE_SIZE || virt_addr >= 0x0000800000000000ULL) {
+        return false;
+    }
+
+    if (!is_canonical_address(virt_addr)) {
+        return false;
+    }
+
+    if (maxphyaddr < 32 || maxphyaddr >= 64) {
+        return false;
+    }
+
+    const uint64_t address_mask = ((1ULL << maxphyaddr) - 1) & ~(PAGE_SIZE - 1ULL);
+    const uint64_t required_flags = PAGE_PRESENT | PAGE_USER;
+
+    uint64_t table_address = get_cr3() & address_mask;
+
+    if (get_cr4() & CR4_LA57) {
+        uint64_t *pml5 = PHYS_TO_VIRT(table_address);
+        uint64_t entry = pml5[PML5_INDEX(virt_addr)];
+
+        if ((entry & required_flags) != required_flags) {
+            return false;
+        }
+
+        table_address = entry & address_mask;
+    }
+
+    uint64_t *pml4 = PHYS_TO_VIRT(table_address);
+    uint64_t pml4e = pml4[PML4_INDEX(virt_addr)];
+
+    if ((pml4e & required_flags) != required_flags) {
+        return false;
+    }
+
+    uint64_t *pdpt = PHYS_TO_VIRT(pml4e & address_mask);
+    uint64_t pdpte = pdpt[PDPT_INDEX(virt_addr)];
+
+    if ((pdpte & required_flags) != required_flags) {
+        return false;
+    }
+
+    if (pdpte & PAGE_PS) {
+        const uint64_t offset_mask = PAGE_SIZE_1GB - 1;
+        *phys_addr = (pdpte & address_mask & ~offset_mask) | (virt_addr & offset_mask);
+        return true;
+    }
+
+    uint64_t *pd = PHYS_TO_VIRT(pdpte & address_mask);
+    uint64_t pde = pd[PD_INDEX(virt_addr)];
+
+    if ((pde & required_flags) != required_flags) {
+        return false;
+    }
+
+    if (pde & PAGE_PS) {
+        const uint64_t offset_mask = PAGE_SIZE_2MB - 1;
+        *phys_addr = (pde & address_mask & ~offset_mask) | (virt_addr & offset_mask);
+        return true;
+    }
+
+    uint64_t *pt = PHYS_TO_VIRT(pde & address_mask);
+    uint64_t pte = pt[PT_INDEX(virt_addr)];
+
+    if ((pte & required_flags) != required_flags) {
+        return false;
+    }
+
+    *phys_addr = (pte & address_mask) | PAGE_OFFSET(virt_addr);
+    return true;
+}

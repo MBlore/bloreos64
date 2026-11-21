@@ -266,52 +266,6 @@ void _move_to_next_line(void)
     memset(&fb[blank_start], 0, (char *)&fb[blank_end] - (char *)&fb[blank_start]);
 }
 
-void tprintf(const char format[], ...)
-{
-    if (!is_ready) {
-        return;
-    }
-
-    char buffer[256];
-
-    va_list args;
-    va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
-    va_end(args);
-
-    // Make sure the line is clear before we start writing in to it.
-    if (render_x == 0) {
-        uint32_t *fb = frame_buffer->address;
-        uint32_t blank_start = fbindex(0, render_y);
-        uint32_t blank_end = fbindex(frame_buffer->width, render_y + glyph_height);
-        memset(&fb[blank_start], 0x00, (char*)&fb[blank_end] - (char*)&fb[blank_start]);
-    }
-    
-    // Write text to the frame buffer using our glyph data.
-    char *ch = &buffer[0];
-
-    do {
-        // Advance the cursor for new lines.
-        if (*ch == '\n') {
-            _move_to_next_line();
-
-            ch++;
-            continue;
-        }
-
-        _render_glyph(*ch, render_x, render_y);
-
-        // Advance the rendering position.
-        render_x += 8 + glyph_padding;
-
-        if (render_x > frame_buffer->width - glyph_width) {
-            _move_to_next_line();
-        }
-
-        ch++;
-    } while (*ch != '\0');
-}
-
 void term_init()
 {
     frame_buffer = framebuffer_request.response->framebuffers[0];
@@ -459,4 +413,64 @@ void term_keyevent(KeyEvent_t *ke)
 
         _render_cursor();
     }
+}
+
+/*
+ * Writes an explicitly sized byte sequence to the framebuffer terminal.
+ *
+ * Newlines advance the output row. Embedded NUL bytes are treated as
+ * non-printing bytes rather than terminating the write.
+ */
+void term_write(const char *data, size_t length)
+{
+    if (!is_ready || data == NULL || length == 0) {
+        return;
+    }
+
+    if (render_x == 0) {
+        uint32_t *fb = frame_buffer->address;
+        uint32_t blank_start = fbindex(0, render_y);
+        uint32_t blank_end = fbindex(frame_buffer->width, render_y + glyph_height);
+
+        memset(&fb[blank_start], 0, (char *)&fb[blank_end] - (char *)&fb[blank_start]);
+    }
+
+    for (size_t i = 0; i < length; i++) {
+        unsigned char ch = (unsigned char)data[i];
+
+        if (ch == '\0') {
+            continue;
+        }
+
+        if (ch == '\n') {
+            _move_to_next_line();
+            continue;
+        }
+
+        _render_glyph((char)ch, render_x, render_y);
+        render_x += glyph_width;
+
+        if (render_x + glyph_width > frame_buffer->width) {
+            _move_to_next_line();
+        }
+    }
+}
+
+/*
+ * Formats a string and writes it to the framebuffer terminal.
+ */
+void tprintf(const char format[], ...)
+{
+    if (!is_ready) {
+        return;
+    }
+
+    char buffer[256];
+
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+    term_write(buffer, strlen(buffer));
 }

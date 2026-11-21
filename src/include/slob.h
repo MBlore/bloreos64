@@ -24,5 +24,4 @@ void slob_init();
 void *slob_malloc(size_t size);
 void slob_free(void *ptr);
 
-
 #endif

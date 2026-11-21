@@ -92,4 +92,6 @@ bool vm_nx_supported(void);
 uint64_t vm_get_address_space(void);
 bool vm_switch_address_space(uint64_t page_table_root);
 
+bool vm_translate_user(uint64_t virt_addr, uint64_t *phys_addr);
+
 #endif

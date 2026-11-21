@@ -106,7 +106,8 @@ USERLAND_PROGRAMS := $(patsubst userland/%/main.c,userland/bin/%,$(wildcard user
 USERLAND_CFLAGS := -O2 -Wall -Wextra -Werror -std=gnu11 \
     -ffreestanding -fno-stack-protector -fno-pie \
     -fno-asynchronous-unwind-tables -fno-unwind-tables \
-    -m64 -mno-red-zone
+    -m64 -mno-red-zone \
+    -I src/include
 
 USERLAND_LDFLAGS := -nostdlib -static -z max-page-size=0x1000
 

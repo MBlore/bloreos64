@@ -1,3 +1,4 @@
+
 HOST_CC := gcc
 HOST_CFLAGS := -Wall -Wextra -std=gnu11
 
@@ -16,13 +17,14 @@ TEST_SRC := \
     test_vm_unmap.c \
     test_vm_pat.c \
     test_vm_mmio.c \
-	test_crc32.c \
-	test_unicode.c \
-	test_str.c \
-	test_fat32_lfn.c \
-	test_fat32_directory.c \
-	test_fat32_dir_create.c \
-	test_fat32_dir_delete.c
+    test_crc32.c \
+    test_unicode.c \
+    test_str.c \
+    test_fat32_lfn.c \
+    test_fat32_directory.c \
+    test_fat32_dir_create.c \
+    test_fat32_dir_delete.c \
+    test_slob.c
 
 TEST_BIN := $(patsubst %.c,bin/%,$(TEST_SRC))
 
@@ -56,7 +58,7 @@ bin/test_vm_mmio bin/test_vm_pat bin/test_vm_translate bin/test_vm_map bin/test_
 		-ffreestanding \
 		$(UNITY_SRC) $(VM_SRC) $(VM_MOCKS) $(VM_HELPERS) $< \
 		-o $@
-		
+
 # Compile each test suite into a separate executable.
 bin/%: %.c $(UNITY_SRC)
 	mkdir -p bin
@@ -89,7 +91,6 @@ bin/test_str: test_str.c $(UNITY_SRC) $(STR_SRC) $(STR_MOCKS) ../src/include/str
 		-ffreestanding \
 		$(UNITY_SRC) $(STR_SRC) $(STR_MOCKS) $< -o $@
 
-
 # FAT32 long filename unit tests.
 FAT32_LFN_SRC := ../src/fs/fat32/lfn.c
 FAT32_UNICODE_SRC := ../src/lib/unicode.c
@@ -107,17 +108,19 @@ FAT32_FILE_SRC := ../src/fs/fat32/file.c
 FAT32_PATH_SRC := ../src/fs/fat32/path.c
 FAT32_UNICODE_SRC := ../src/lib/unicode.c
 FAT32_DIRECTORY_MOCKS := mocks/mock_fat32_directory.c
+FAT32_TIMESTAMP_MOCK := mocks/mock_fat32_timestamp.c
 
 bin/test_fat32_directory: test_fat32_directory.c $(UNITY_SRC) \
                          $(FAT32_DIRECTORY_SRC) $(FAT32_LFN_SRC) \
                          $(FAT32_FILE_SRC) $(FAT32_PATH_SRC) $(FAT32_UNICODE_SRC) \
-                         $(FAT32_DIRECTORY_MOCKS) mocks/mock_fat32_directory.h
+                         $(FAT32_DIRECTORY_MOCKS) $(FAT32_TIMESTAMP_MOCK) \
+                         mocks/mock_fat32_directory.h
 	mkdir -p bin
 	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
 		-ffunction-sections -fdata-sections \
 		$(UNITY_SRC) $(FAT32_DIRECTORY_SRC) $(FAT32_LFN_SRC) \
 		$(FAT32_FILE_SRC) $(FAT32_PATH_SRC) $(FAT32_UNICODE_SRC) \
-		$(FAT32_DIRECTORY_MOCKS) $< \
+		$(FAT32_DIRECTORY_MOCKS) $(FAT32_TIMESTAMP_MOCK) $< \
 		-Wl,--gc-sections -o $@
 
 # FAT32 directory creation tests.
@@ -126,21 +129,22 @@ FAT32_DIR_CREATE_SRC := ../src/fs/fat32/dir_create.c
 bin/test_fat32_dir_create: test_fat32_dir_create.c $(UNITY_SRC) \
                            $(FAT32_DIR_CREATE_SRC) $(FAT32_DIRECTORY_SRC) \
                            $(FAT32_LFN_SRC) $(FAT32_UNICODE_SRC) \
-                           ../src/fs/fat32/path.c \
-                           $(FAT32_DIRECTORY_MOCKS)
+                           $(FAT32_PATH_SRC) \
+                           $(FAT32_DIRECTORY_MOCKS) $(FAT32_TIMESTAMP_MOCK)
 	mkdir -p bin
 	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
 		-ffunction-sections -fdata-sections \
 		$(UNITY_SRC) $(FAT32_DIR_CREATE_SRC) $(FAT32_DIRECTORY_SRC) \
 		$(FAT32_LFN_SRC) $(FAT32_UNICODE_SRC) \
-		../src/fs/fat32/path.c \
-		$(FAT32_DIRECTORY_MOCKS) $< \
+		$(FAT32_PATH_SRC) \
+		$(FAT32_DIRECTORY_MOCKS) $(FAT32_TIMESTAMP_MOCK) $< \
 		-Wl,--gc-sections -o $@
 
 bin/test_fat32_dir_delete: test_fat32_dir_delete.c $(UNITY_SRC) \
                            $(FAT32_DIR_CREATE_SRC) $(FAT32_DIRECTORY_SRC) \
                            $(FAT32_LFN_SRC) $(FAT32_PATH_SRC) $(FAT32_UNICODE_SRC) \
-                           ../src/fs/fat32/dir_delete.c $(FAT32_DIRECTORY_MOCKS)
+                           ../src/fs/fat32/dir_delete.c \
+                           $(FAT32_DIRECTORY_MOCKS) $(FAT32_TIMESTAMP_MOCK)
 	mkdir -p bin
 	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
 		-ffunction-sections -fdata-sections \
@@ -151,8 +155,16 @@ bin/test_fat32_dir_delete: test_fat32_dir_delete.c $(UNITY_SRC) \
 		$(FAT32_LFN_SRC) \
 		$(FAT32_PATH_SRC) \
 		$(FAT32_UNICODE_SRC) \
-		$(FAT32_DIRECTORY_MOCKS) $< \
+		$(FAT32_DIRECTORY_MOCKS) $(FAT32_TIMESTAMP_MOCK) $< \
 		-Wl,--gc-sections -o $@
+
+# SLOB allocator unit tests.
+SLOB_SRC := ../src/alloc/slob.c
+
+bin/test_slob: test_slob.c $(UNITY_SRC) $(SLOB_SRC)
+	mkdir -p bin
+	$(HOST_CC) $(HOST_CFLAGS) $(INCLUDES) \
+		$(UNITY_SRC) $(SLOB_SRC) $< -o $@
 
 .PHONY: clean
 clean:

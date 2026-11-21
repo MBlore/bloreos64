@@ -11,6 +11,7 @@ int mock_paging_enabled;
 uint64_t mock_pat;
 uint32_t mock_cpuid_edx;
 uint32_t mock_read_msr_count;
+uint64_t mock_efer = 0;
 
 size_t mock_invlpg_count;
 uint64_t mock_invlpg_address;

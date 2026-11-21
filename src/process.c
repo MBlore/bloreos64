@@ -18,6 +18,7 @@
 #include <process.h>
 #include <thread.h>
 #include <vm.h>
+#include <slob.h>
 #include <string.h>
 #include <mem.h>
 
@@ -47,7 +48,7 @@ bool process_alloc_page(process_t *process, uint64_t virt_addr, uint64_t flags)
     memset(page, 0, PAGE_SIZE);
 
     // Allocate a separate record to track ownership.
-    process_page_t *record = kalloc(sizeof(process_page_t));
+    process_page_t *record = slob_malloc(sizeof(process_page_t));
 
     if (record == NULL) {
         kfree(page);
@@ -58,7 +59,7 @@ bool process_alloc_page(process_t *process, uint64_t virt_addr, uint64_t flags)
     const uint64_t physical_address = (uint64_t)page - vmm_higher_half_offset;
 
     if (!vm_map_page_in(process->page_table_root, virt_addr, physical_address, flags)) {
-        kfree(record);
+        slob_free(record);
         kfree(page);
         return false;
     }
@@ -121,7 +122,7 @@ void process_free_pages(process_t *process)
         vm_unmap_page_in(process->page_table_root, record->virtual_address);
 
         kfree(record->physical_page);
-        kfree(record);
+        slob_free(record);
 
         record = next;
     }

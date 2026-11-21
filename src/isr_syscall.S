@@ -23,12 +23,17 @@ ISR_Handler_Syscall:
 
     cld
 
-    # First argument: system-call number from saved RAX.
+    # Syscall number from user RAX.
     mov 112(%rsp), %rdi
 
-    # Second argument: privilege level from interrupted CS.
-    mov 128(%rsp), %rsi
-    and $3, %rsi
+    # Syscall arguments from saved user registers.
+    mov 72(%rsp), %rsi
+    mov 80(%rsp), %rdx
+    mov 88(%rsp), %rcx
+
+    # Caller privilege level from interrupted CS.
+    mov 128(%rsp), %r8
+    and $3, %r8
 
     # Preserve the saved-register stack pointer and align for C.
     mov %rsp, %r12

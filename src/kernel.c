@@ -203,6 +203,8 @@ void kernel_main(void)
 
     kmem_init();
 
+    slob_init();
+
     kprintf("PMM Available Pages: %lu\n", num_pages_available);
 
     acpi_init();
@@ -235,11 +237,6 @@ void kernel_main(void)
     scheduler_init();
 
     init_kernel_scheduler();
-
-    //scheduler_test_run();
-    //address_space_test_run();
-    //address_space_memory_test_run();
-    //address_space_usermode_test_run();
 
     nvme_init();
 

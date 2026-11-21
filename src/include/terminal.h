@@ -19,6 +19,7 @@
 #define _BLOREOS_TERMINAL_H
 
 #include <stdint.h>
+#include <stddef.h>
 #include <ps2.h>
 
 #define TERM_DEFAULT_FGCOLOR 0xCCCCCC
@@ -32,5 +33,6 @@ void term_keyevent(KeyEvent_t *ke);
 void term_cblink();
 void term_clear();
 void term_show_prompt(void);
+void term_write(const char *data, size_t length);
 
 #endif
