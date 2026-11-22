@@ -28,6 +28,7 @@
 #include <process_exec.h>
 #include <os_config.h>
 #include <string.h>
+#include <path.h>
 
 #define COMMAND_MAX_ARGS 8
 #define COMMAND_READ_SIZE 128
@@ -394,109 +395,6 @@ bool commands_execute(char *line)
 }
 
 /*
- * Removes the final component of a normalised absolute path.
- *
- * The root directory is its own parent.
- */
-static void command_path_parent(char *path, size_t *length)
-{
-    if (*length <= 1) {
-        return;
-    }
-
-    while (*length > 1 && path[*length - 1] != '/') {
-        (*length)--;
-    }
-
-    if (*length > 1) {
-        (*length)--;
-    }
-
-    path[*length] = '\0';
-}
-
-/*
- * Converts an absolute or relative path into a normalised absolute path.
- *
- * Resolves "." and "..", collapses repeated separators and removes
- * trailing separators except for the root directory.
- *
- * Returns OS_ERR_NAME_TOO_LONG if the output buffer is insufficient.
- * Does not access the filesystem; existence is checked by the caller.
- */
-static os_error_t command_resolve_path(const char *input, char *output, size_t capacity)
-{
-    if (input == NULL || output == NULL || capacity < 2 || input[0] == '\0') {
-        return OS_ERR_INVALID_ARGUMENT;
-    }
-
-    size_t length = 1;
-    output[0] = '/';
-    output[1] = '\0';
-
-    if (input[0] != '/') {
-        size_t cwd_length = strlen(current_directory);
-
-        if (cwd_length >= capacity) {
-            return OS_ERR_NAME_TOO_LONG;
-        }
-
-        for (size_t i = 0; i <= cwd_length; i++) {
-            output[i] = current_directory[i];
-        }
-
-        length = cwd_length;
-    }
-
-    const char *cursor = input;
-
-    while (*cursor != '\0') {
-        while (*cursor == '/') {
-            cursor++;
-        }
-
-        if (*cursor == '\0') {
-            break;
-        }
-
-        const char *component = cursor;
-
-        while (*cursor != '\0' && *cursor != '/') {
-            cursor++;
-        }
-
-        size_t component_length = (size_t)(cursor - component);
-
-        if (component_length == 1 && component[0] == '.') {
-            continue;
-        }
-
-        if (component_length == 2 && component[0] == '.' && component[1] == '.') {
-            command_path_parent(output, &length);
-            continue;
-        }
-
-        size_t separator_length = length > 1 ? 1 : 0;
-
-        if (component_length >= capacity - length - separator_length) {
-            return OS_ERR_NAME_TOO_LONG;
-        }
-
-        if (separator_length != 0) {
-            output[length++] = '/';
-        }
-
-        for (size_t i = 0; i < component_length; i++) {
-            output[length++] = component[i];
-        }
-
-        output[length] = '\0';
-    }
-
-    return OS_OK;
-}
-
-/*
  * Prints the terminal's current working directory.
  */
 static void command_pwd(int argc, char **argv)
@@ -529,7 +427,7 @@ static void command_cd(int argc, char **argv)
     const char *requested = argc == 1 ? "/" : argv[1];
 
     char path[COMMAND_PATH_MAX];
-    os_error_t result = command_resolve_path(requested, path, sizeof(path));
+    os_error_t result = path_resolve(current_directory, requested, path, sizeof(path));
 
     if (result != OS_OK) {
         command_error("cd", result);
@@ -563,7 +461,7 @@ static void command_cd(int argc, char **argv)
  */
 static bool command_get_path(const char *name, const char *argument, char *path, size_t capacity)
 {
-    os_error_t result = command_resolve_path(argument, path, capacity);
+    os_error_t result = path_resolve(current_directory, argument, path, capacity);
 
     if (result != OS_OK) {
         command_error(name, result);
