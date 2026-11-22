@@ -21,6 +21,7 @@
 #include <thread.h>
 #include <kernel.h>
 #include <terminal.h>
+#include <gdt.h>
 
 static thread_t *threads[SCHEDULER_MAX_THREADS];
 static thread_t *current_thread;
@@ -164,6 +165,20 @@ void scheduler_yield(void)
     next->state = THREAD_RUNNING;
     current_thread = next;
 
+    /*
+    * Install the incoming thread's Ring 0 interrupt stack.
+    *
+    * Kernel threads without a private stack retain the existing
+    * TSS.RSP0 value.
+    */
+    uint64_t next_kernel_stack = next->kernel_stack_top;
+
+    if (next_kernel_stack == 0) {
+        next_kernel_stack = gdt_get_default_kernel_stack();
+    }
+
+    gdt_set_kernel_stack(next_kernel_stack);
+
     context_switch(&previous->context, &next->context);
 
     set_interrupt_state(interrupts_enabled);
@@ -194,6 +209,15 @@ void scheduler_exit(void)
 
     next->state = THREAD_RUNNING;
     current_thread = next;
+
+    // Install the next threads interrupt stack.
+    uint64_t next_kernel_stack = next->kernel_stack_top;
+
+    if (next_kernel_stack == 0) {
+        next_kernel_stack = gdt_get_default_kernel_stack();
+    }
+
+    gdt_set_kernel_stack(next_kernel_stack);
 
     context_switch(&previous->context, &next->context);
 

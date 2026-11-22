@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <limine.h>
+#include <alloc.h>
 
 #define PAGE_SIZE 4096
 

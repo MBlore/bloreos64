@@ -24,10 +24,58 @@
 #include <process.h>
 #include <usermode.h>
 #include <process_exec.h>
+#include <thread.h>
+#include <gdt.h>
+#include <scheduler.h>
+#include <kthread.h>
+#include <kernel.h>
+#include <str.h>
 
 #include "loader.h"
 
 #define PROCESS_EXEC_MAX_FILE_SIZE (1024 * 1024)
+
+/*
+ * Entry point for a scheduled user thread.
+ *
+ * The scheduler switches onto this thread's kernel stack before
+ * calling this function. It then transitions into Ring 3 using
+ * the process address space and the ELF entry point.
+ */
+static void process_thread_entry(void)
+{
+    thread_t *thread = scheduler_current();
+
+    if (thread == NULL || thread->process == NULL) {
+        scheduler_exit();
+    }
+
+    /*
+    * Scheduled user threads currently begin execution in the kernel
+    * address space. usermode_enter() is responsible for switching
+    * to the process address space.
+    */
+    uint64_t kernel_root = vm_get_address_space();
+
+    if (kernel_root == thread->process->page_table_root) {
+        scheduler_exit();
+    }
+
+    thread->state = THREAD_RUNNING;
+
+    usermode_enter(thread->entry_point, thread->user_stack_top,
+                   thread->process->page_table_root, &thread->usermode);
+
+    /*
+    * The existing SYS_EXIT path must restore the kernel address
+    * space before this thread returns to the scheduler.
+    */
+    if (vm_get_address_space() != kernel_root) {
+        hcf();
+    }
+
+    scheduler_exit();
+}
 
 /*
  * Loads an ELF64 executable from the VFS and runs it synchronously in Ring 3.
@@ -51,7 +99,7 @@ bool process_exec(const char *path)
         return false;
     }
 
-    void *buffer = kalloc((size_t)stat.size);
+    void *buffer = malloc((size_t)stat.size);
 
     if (buffer == NULL) {
         return false;
@@ -60,7 +108,7 @@ bool process_exec(const char *path)
     vfs_file_t file = {0};
 
     if (vfs_open(path, VFS_OPEN_READ, &file) != OS_OK) {
-        kfree(buffer);
+        free(buffer);
         return false;
     }
 
@@ -68,36 +116,85 @@ bool process_exec(const char *path)
     vfs_close(&file);
 
     if (bytes_read != (int64_t)stat.size) {
-        kfree(buffer);
+        free(buffer);
         return false;
     }
 
-    process_t process = {0};
+    process_t *process = process_create();
+    if (process == NULL) {
+        free(buffer);
+        return false;
+    }
+
+    thread_t *thread = thread_create(process);
+    if (thread == NULL) {
+        process_destroy(process);
+        free(buffer);
+        return false;
+    }
+
     uint64_t entry_point = 0;
     bool success = false;
 
-    if (!vm_create_address_space(&process.page_table_root)) {
+    if (!vm_create_address_space(&process->page_table_root)) {
         goto cleanup;
     }
 
-    if (!elf_loader_load(&process, buffer, (size_t)stat.size, &entry_point)) {
+    if (!elf_loader_load(process, buffer, (size_t)stat.size, &entry_point)) {
+        goto cleanup;
+    }
+
+    thread->entry_point = entry_point;
+    thread->user_stack_top = process->user_stack_pointer;
+
+    /*
+    * Reserve the upper half of the kernel stack for Ring 3 interrupts.
+    * The scheduled kernel context uses the lower half.
+    */
+    if (!kthread_prepare(thread, process_thread_entry, thread->kernel_stack, 8 * 1024)) {
+        goto cleanup;
+    }
+
+    /*
+    * The CPU enters the upper half when an interrupt arrives from Ring 3.
+    */
+    thread->kernel_stack_top = (uint64_t)thread->kernel_stack + 16 * 1024;
+
+    /*
+    * The calling thread must be registered before we can yield.
+    */
+    if (scheduler_current() == NULL) {
         goto cleanup;
     }
 
     uint64_t kernel_root = vm_get_address_space();
 
-    usermode_enter(entry_point, process.user_stack_pointer, process.page_table_root);
+    /*
+    * Register the user thread with the scheduler.
+    */
+    thread->state = THREAD_READY;
+
+    if (!scheduler_add(thread)) {
+        goto cleanup;
+    }
+
+    while (thread->state != THREAD_TERMINATED) {
+        scheduler_yield();
+    }
+
+    scheduler_reap();
+
+    /*
+    * Remove the terminated thread before destroying it.
+    */
+    scheduler_reap();
 
     success = vm_get_address_space() == kernel_root;
 
 cleanup:
-    process_free_pages(&process);
-
-    if (process.page_table_root != 0) {
-        vm_destroy_address_space(process.page_table_root);
-    }
-
-    kfree(buffer);
+    thread_destroy(thread);
+    process_destroy(process);
+    free(buffer);
 
     return success;
 }

@@ -23,6 +23,7 @@
 #include <kernel.h>
 #include <process.h>
 #include <usermode.h>
+#include <thread.h>
 
 #include "tests.h"
 
@@ -140,7 +141,8 @@ bool address_space_usermode_test_run(void)
 
     klogf("User-mode transition test: ENTERING\n");
 
-    usermode_enter(USER_CODE_BASE, USER_STACK_TOP, kernel_root);
+    usermode_context_t usermode = {0};
+    usermode_enter(USER_CODE_BASE, USER_STACK_TOP, kernel_root, &usermode);
 
     if (vm_get_address_space() != kernel_root) {
         klogf("User-mode transition test: CR3 RESTORE FAILED\n");

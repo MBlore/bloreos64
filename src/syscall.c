@@ -26,6 +26,7 @@
 #include <abi/errno.h>
 #include <abi/unistd.h>
 #include <usercopy.h>
+#include <thread.h>
 
 /*
  * Writes bytes from a user-space buffer to stdout or stderr.

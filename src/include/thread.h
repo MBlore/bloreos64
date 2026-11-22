@@ -30,6 +30,7 @@ typedef enum {
     THREAD_TERMINATED
 } thread_state_t;
 
+// thread_context saves registers for switching between scheduled kernel threads.
 typedef struct thread_context {
     uint64_t rsp;
     uint64_t rbx;
@@ -40,13 +41,22 @@ typedef struct thread_context {
     uint64_t r15;
 } thread_context_t;
 
+// usermode_context saves the kernel return information when entering Ring 3.
+typedef struct usermode_context {
+    uint64_t kernel_rsp;
+    uint64_t kernel_return;
+    uint64_t kernel_cr3;
+} usermode_context_t;
+
 typedef struct thread {
     tid_t tid;
     process_t *process;
     thread_state_t state;
 
     thread_context_t context;
+    usermode_context_t usermode;
 
+    void *kernel_stack;
     uint64_t kernel_stack_top;
     uint64_t user_stack_top;
     uint64_t entry_point;
@@ -54,6 +64,7 @@ typedef struct thread {
 
 void context_switch(thread_context_t *previous, thread_context_t *next);
 
-void process_init_test(process_t *process, thread_t *thread);
+thread_t    *thread_create(process_t *process);
+void        thread_destroy(thread_t *thread);
 
 #endif

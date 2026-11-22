@@ -139,3 +139,37 @@ void init_gdt()
 
     kprintf("Loading GDT at: 0x%X\n", &gdtp);
 }
+
+/*
+ * Sets the Ring 0 stack used when the CPU transitions from Ring 3
+ * through an interrupt or exception.
+ *
+ * Must be called with a valid, mapped kernel stack before entering
+ * user mode. This currently updates the bootstrap CPU's TSS.
+ */
+void gdt_set_kernel_stack(uint64_t stack_top)
+{
+    tss.rsp0 = stack_top;
+}
+
+/*
+ * Returns the Ring 0 stack pointer currently configured in the TSS.
+ *
+ * Used to preserve the previous interrupt stack when temporarily
+ * executing a user thread.
+ */
+uint64_t gdt_get_kernel_stack(void)
+{
+    return tss.rsp0;
+}
+
+/*
+ * Returns the top of the bootstrap CPU's original Ring 0 interrupt stack.
+ *
+ * This stack remains allocated for the lifetime of the kernel and can
+ * be used when a kernel thread has no dedicated interrupt stack.
+ */
+uint64_t gdt_get_default_kernel_stack(void)
+{
+    return (uint64_t)(tss_stack + sizeof(tss_stack));
+}

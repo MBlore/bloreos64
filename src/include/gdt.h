@@ -80,5 +80,8 @@ struct tss64
 } __attribute__((packed));
 
 void init_gdt();
+void gdt_set_kernel_stack(uint64_t stack_top);
+uint64_t gdt_get_kernel_stack(void);
+uint64_t gdt_get_default_kernel_stack(void);
 
 #endif

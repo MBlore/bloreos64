@@ -21,6 +21,49 @@
 #include <slob.h>
 #include <string.h>
 #include <mem.h>
+#include <alloc.h>
+
+/*
+ * Allocates and initialises a new process structure.
+ *
+ * The process initially has no address space or owned pages.
+ * These resources are established later by the executable loader.
+ *
+ * The caller owns the returned process and must eventually
+ * release it using process_destroy().
+ */
+process_t *process_create(void)
+{
+    process_t *process = malloc(sizeof(process_t));
+
+    if (process == NULL) {
+        return NULL;
+    }
+
+    memset(process, 0, sizeof(process_t));
+
+    return process;
+}
+
+/*
+ * Destroys a process and releases all resources owned by it.
+ *
+ * The process must no longer be executing on any CPU, and its
+ * address space must not be active when this function is called.
+ */
+void process_destroy(process_t *process)
+{
+    if (process == NULL) {
+        return;
+    }
+
+    if (process->page_table_root != 0) {
+        process_free_pages(process);
+        vm_destroy_address_space(process->page_table_root);
+    }
+
+    free(process);
+}
 
 /*
  * Allocates a zero-initialised physical page, maps it into the process
@@ -48,7 +91,7 @@ bool process_alloc_page(process_t *process, uint64_t virt_addr, uint64_t flags)
     memset(page, 0, PAGE_SIZE);
 
     // Allocate a separate record to track ownership.
-    process_page_t *record = slob_malloc(sizeof(process_page_t));
+    process_page_t *record = malloc(sizeof(process_page_t));
 
     if (record == NULL) {
         kfree(page);
@@ -59,7 +102,7 @@ bool process_alloc_page(process_t *process, uint64_t virt_addr, uint64_t flags)
     const uint64_t physical_address = (uint64_t)page - vmm_higher_half_offset;
 
     if (!vm_map_page_in(process->page_table_root, virt_addr, physical_address, flags)) {
-        slob_free(record);
+        free(record);
         kfree(page);
         return false;
     }
@@ -122,37 +165,10 @@ void process_free_pages(process_t *process)
         vm_unmap_page_in(process->page_table_root, record->virtual_address);
 
         kfree(record->physical_page);
-        slob_free(record);
+        free(record);
 
         record = next;
     }
 
     process->owned_pages = NULL;
-}
-
-/*
- * Initialises the bootstrap user process and its first thread.
- *
- * This is temporary single-process plumbing. Process allocation,
- * lifetime management and scheduling will be introduced separately.
- */
-void process_init_test(process_t *process, thread_t *thread)
-{
-    process->pid = 1;
-    process->page_table_root = 0;
-
-    thread->tid = 1;
-    thread->process = process;
-    thread->state = THREAD_READY;
-    thread->kernel_stack_top = 0;
-    thread->user_stack_top = USER_STACK_TOP;
-    thread->entry_point = USER_CODE_BASE;
-
-    thread->context.rsp = 0;
-    thread->context.rbx = 0;
-    thread->context.rbp = 0;
-    thread->context.r12 = 0;
-    thread->context.r13 = 0;
-    thread->context.r14 = 0;
-    thread->context.r15 = 0;
 }

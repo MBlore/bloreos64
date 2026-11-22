@@ -21,8 +21,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+typedef struct usermode_context usermode_context_t;
+
 bool usermode_prepare(void);
-void usermode_enter(uint64_t entry, uint64_t stack, uint64_t page_table_root);
+void usermode_enter(uint64_t entry, uint64_t stack, uint64_t page_table_root, usermode_context_t *context);
 void usermode_exit(void) __attribute__((noreturn));
 
 #endif

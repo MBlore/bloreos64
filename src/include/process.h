@@ -36,8 +36,11 @@ typedef struct process {
     process_page_t *owned_pages;
 } process_t;
 
-bool process_alloc_page(process_t *process, uint64_t virt_addr, uint64_t flags);
-void process_free_pages(process_t *process);
-void *process_find_page(const process_t *process, uint64_t virt_addr);
+bool            process_alloc_page(process_t *process, uint64_t virt_addr, uint64_t flags);
+void            process_free_pages(process_t *process);
+void            *process_find_page(const process_t *process, uint64_t virt_addr);
+
+process_t       *process_create(void);
+void            process_destroy(process_t *process);
 
 #endif

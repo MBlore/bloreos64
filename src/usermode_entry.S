@@ -1,16 +1,7 @@
 .section .bss
 .align 8
 
-.global usermode_kernel_rsp
-usermode_kernel_rsp:
-    .quad 0
-
-.global usermode_kernel_return
-usermode_kernel_return:
-    .quad 0
-
-.global usermode_kernel_cr3
-usermode_kernel_cr3:
+usermode_current_context:
     .quad 0
 
 .section .text
@@ -23,6 +14,7 @@ usermode_kernel_cr3:
 # RDI = user instruction pointer
 # RSI = user stack pointer
 # RDX = process page-table root (physical address)
+# RCX = pointer to usermode_context_t
 usermode_enter:
     # Preserve the kernel's callee-saved registers.
     push %rbx
@@ -32,14 +24,17 @@ usermode_enter:
     push %r14
     push %r15
 
-    # Remember the kernel context.
-    mov %rsp, usermode_kernel_rsp(%rip)
-    lea .return_to_kernel(%rip), %rax
-    mov %rax, usermode_kernel_return(%rip)
+    # Remember which context belongs to the executing user thread.
+    mov %rcx, usermode_current_context(%rip)
 
-    # Remember the kernel's original address space.
+    # Save the kernel return context into the current thread's usermode context.
+    mov %rsp, 0(%rcx) # kernel_rsp
+
+    lea .return_to_kernel(%rip), %rax
+    mov %rax, 8(%rcx) # kernel_return
+
     mov %cr3, %rax
-    mov %rax, usermode_kernel_cr3(%rip)
+    mov %rax, 16(%rcx) # kernel_cr3
 
     # Switch to the process address space.
     mov %rdx, %cr3
@@ -77,12 +72,20 @@ usermode_enter:
 
     ret
 
-# Terminate the test user program and resume the kernel.
+# Terminate the user program and resume its kernel thread.
 #
-# Restore the original kernel address space before returning.
+# Restore the saved kernel stack and address space before returning.
 usermode_exit:
-    mov usermode_kernel_cr3(%rip), %rax
+    # Retrieve the current thread's saved kernel context.
+    mov usermode_current_context(%rip), %rcx
+
+    # Load everything before switching address spaces.
+    mov 0(%rcx), %rsp
+    mov 8(%rcx), %rdx
+    mov 16(%rcx), %rax
+
+    # Restore the kernel address space.
     mov %rax, %cr3
 
-    mov usermode_kernel_rsp(%rip), %rsp
-    jmp *usermode_kernel_return(%rip)
+    # Resume the saved kernel execution context.
+    jmp *%rdx
