@@ -117,7 +117,8 @@ userland: $(USERLAND_PROGRAMS)
 userland/bin/%: userland/%/main.c userland/%/linker.ld GNUmakefile
 	mkdir -p userland/bin
 	$(CC) $(USERLAND_CFLAGS) -c $< -o userland/$*/main.o
-	$(LD) $(USERLAND_LDFLAGS) -T userland/$*/linker.ld -o $@ userland/$*/main.o
+	$(CC) $(USERLAND_CFLAGS) -c userland/crt0.S -o userland/$*/crt0.o
+	$(LD) $(USERLAND_LDFLAGS) -T userland/$*/linker.ld -o $@ userland/$*/crt0.o userland/$*/main.o
 
 # Default target.
 .PHONY: all

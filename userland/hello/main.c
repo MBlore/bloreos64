@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <abi/syscall.h>
 #include <abi/unistd.h>
+#include <stdbool.h>
 
 /*
  * Invokes a BloreOS syscall using the x86-64 interrupt ABI.
@@ -24,26 +25,74 @@ static inline int64_t syscall3(uint64_t number, uint64_t arg1, uint64_t arg2, ui
 }
 
 /*
- * Entry point for the first BloreOS user-space executable.
+ * Writes a NUL-terminated string to standard output.
  *
- * Writes a message to stdout, verifies the byte count and exits.
+ * Parameters:
+ *   text - String to print.
  */
-__attribute__((noreturn))
-void _start(void)
+static bool print(const char *text)
 {
-    static const char message[] = "Hello from BloreOS user space!\n";
-    static const char error[] = "SYS_WRITE failed!\n";
+    size_t length = 0;
 
-    int64_t written = syscall3(SYS_WRITE, STDOUT_FILENO, (uint64_t)message, sizeof(message) - 1);
-
-    if (written != (int64_t)(sizeof(message) - 1)) {
-        syscall3(SYS_WRITE, STDERR_FILENO, (uint64_t)error, sizeof(error) - 1);
-        syscall3(SYS_EXIT, 1, 0, 0);
+    while (text[length] != '\0') {
+        length++;
     }
 
-    syscall3(SYS_EXIT, 0, 0, 0);
+    int64_t written = syscall3(
+        SYS_WRITE, STDOUT_FILENO,
+        (uint64_t)text, length
+    );
 
-    for (;;) {
-        __asm__ volatile ("pause");
+    return written == (int64_t)length;
+}
+
+/*
+ * Prints an unsigned integer in decimal.
+ *
+ * Parameters:
+ *   value - Number to print.
+ */
+static void print_number(uint64_t value)
+{
+    char buffer[21];
+    size_t position = sizeof(buffer);
+
+    buffer[--position] = '\0';
+
+    do {
+        buffer[--position] = '0' + (value % 10);
+        value /= 10;
+    } while (value != 0);
+
+    print(&buffer[position]);
+}
+
+/*
+ * Entry point for the BloreOS hello application.
+ *
+ * Prints the arguments supplied by the shell.
+ *
+ * Parameters:
+ *   argc - Number of command-line arguments.
+ *   argv - Array of argument strings.
+ *
+ * Returns:
+ *   Zero on success, otherwise one.
+ */
+/*
+ * Tests argument count and pointer validity independently.
+ */
+int main(int argc, char **argv)
+{
+    print("Hello from Ring 3!\n");
+
+    for (int i = 0; i < argc; i++) {
+        print("argv[");
+        print_number((uint64_t)i);
+        print("] = ");
+        print(argv[i]);
+        print("\n");
     }
+
+    return 0;
 }

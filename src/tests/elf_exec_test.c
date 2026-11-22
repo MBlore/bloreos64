@@ -35,7 +35,8 @@ bool elf_execution_test_run(void)
 {
     klogf("ELF execution test: ENTERING /bin/hello\n");
 
-    bool passed = process_exec("/bin/hello");
+    char *argv[] = { "hello", NULL };
+    bool passed = process_exec("/bin/hello", 1, argv);
 
     klogf("ELF execution test: %s\n", passed ? "PASS" : "FAIL");
 

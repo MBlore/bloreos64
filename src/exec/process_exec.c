@@ -35,6 +35,161 @@
 
 #define PROCESS_EXEC_MAX_FILE_SIZE (1024 * 1024)
 
+
+/*
+ * Copies kernel data into an allocated process user-memory range.
+ *
+ * Parameters:
+ *   process     - Destination process.
+ *   destination - User virtual address.
+ *   source      - Kernel source buffer.
+ *   length      - Number of bytes to copy.
+ *
+ * Returns:
+ *   True if every byte was copied, otherwise false.
+ */
+static bool process_write_user(process_t *process,
+                               uint64_t destination,
+                               const void *source,
+                               size_t length)
+{
+    const uint8_t *bytes = source;
+
+    while (length > 0) {
+        size_t offset = destination & (PAGE_SIZE - 1);
+        size_t chunk = PAGE_SIZE - offset;
+
+        if (chunk > length) {
+            chunk = length;
+        }
+
+        uint8_t *page = process_find_page(process, destination);
+
+        if (page == NULL) {
+            return false;
+        }
+
+        memcpy(page + offset, bytes, chunk);
+
+        destination += chunk;
+        bytes += chunk;
+        length -= chunk;
+    }
+
+    return true;
+}
+
+#define PROCESS_MAX_ARGS 32
+#define PROCESS_MAX_ARG_LENGTH 1024
+
+/*
+ * Constructs the initial x86-64 user stack containing argc, argv,
+ * empty environment and an auxiliary-vector terminator.
+ *
+ * Parameters:
+ *   process - Process whose stack has already been allocated.
+ *   argc    - Number of command-line arguments.
+ *   argv    - Kernel-owned argument strings.
+ *
+ * Returns:
+ *   True on success, otherwise false.
+ */
+static bool process_setup_arguments(process_t *process,
+                                    int argc,
+                                    char *const argv[])
+{
+    if (process == NULL || argc < 0 ||
+        argc > PROCESS_MAX_ARGS ||
+        (argc > 0 && argv == NULL)) {
+        return false;
+    }
+
+    uint64_t stack = process->user_stack_pointer;
+    const uint64_t stack_bottom = stack - USER_STACK_SIZE;
+    uint64_t pointers[PROCESS_MAX_ARGS];
+
+    // Copy strings into user memory, working downwards.
+    for (int i = argc - 1; i >= 0; i--) {
+        if (argv[i] == NULL) {
+            return false;
+        }
+
+        size_t length = 0;
+
+        while (length < PROCESS_MAX_ARG_LENGTH &&
+               argv[i][length] != '\0') {
+            length++;
+        }
+
+        if (length == PROCESS_MAX_ARG_LENGTH) {
+            return false;
+        }
+
+        length++; // Include the terminating NUL.
+
+        if (stack < stack_bottom ||
+            length > stack - stack_bottom) {
+            return false;
+        }
+
+        stack -= length;
+
+        if (!process_write_user(process, stack,
+                                argv[i], length)) {
+            return false;
+        }
+
+        pointers[i] = stack;
+    }
+
+    // Reserve argc, argv pointers, NULL, empty envp and auxv.
+    size_t words = (size_t)argc + 5;
+    size_t bytes = words * sizeof(uint64_t);
+
+    if (stack < stack_bottom ||
+        bytes + 15 > stack - stack_bottom) {
+        return false;
+    }
+
+    stack = (stack - bytes) & ~15ULL;
+
+    // argc
+    uint64_t value = (uint64_t)argc;
+
+    if (!process_write_user(process, stack,
+                            &value, sizeof(value))) {
+        return false;
+    }
+
+    // argv[0..argc-1]
+    for (int i = 0; i < argc; i++) {
+        if (!process_write_user(
+                process,
+                stack + sizeof(uint64_t) * (size_t)(i + 1),
+                &pointers[i],
+                sizeof(uint64_t))) {
+            return false;
+        }
+    }
+
+    // argv NULL, envp NULL, auxv AT_NULL type and value.
+    value = 0;
+
+    for (size_t i = (size_t)argc + 1; i < words; i++) {
+        if (!process_write_user(
+                process,
+                stack + sizeof(uint64_t) * i,
+                &value,
+                sizeof(value))) {
+            return false;
+        }
+    }
+
+    process->user_stack_pointer = stack;
+
+    return true;
+}
+
 /*
  * Entry point for a scheduled user thread.
  *
@@ -81,8 +236,11 @@ static void process_thread_entry(void)
  * Loads an ELF64 executable from the VFS and executes it as a
  * scheduled user thread. The calling thread waits for termination.
  */
-bool process_exec(const char *path)
+bool process_exec(const char *path, int argc, char *const argv[])
 {
+    (void)argc;
+    (void)argv;
+
     if (path == NULL || path[0] != '/') {
         return false;
     }
@@ -136,6 +294,10 @@ bool process_exec(const char *path)
     }
 
     if (!elf_loader_load(process, buffer, (size_t)stat.size, &entry_point)) {
+        goto cleanup;
+    }
+
+    if (!process_setup_arguments(process, argc, argv)) {
         goto cleanup;
     }
 

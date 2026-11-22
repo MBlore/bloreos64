@@ -434,7 +434,7 @@ bool commands_execute(char *line)
         return false;
     }
 
-    if (!process_exec(path)) {
+    if (!process_exec(path, argc, argv)) {
         tprintf("%s: Failed to execute\n", argv[0]);
     }
 

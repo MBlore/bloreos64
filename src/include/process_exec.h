@@ -20,6 +20,17 @@
 
 #include <stdbool.h>
 
-bool process_exec(const char *path);
+/*
+ * Loads and executes an ELF64 program as a scheduled Ring 3 process.
+ *
+ * Parameters:
+ *   path - Absolute filesystem path to the executable.
+ *   argc - Number of command-line arguments.
+ *   argv - Array of argument strings, including the program name.
+ *
+ * Returns:
+ *   True if execution completes successfully, otherwise false.
+ */
+bool process_exec(const char *path, int argc, char *const argv[]);
 
 #endif
