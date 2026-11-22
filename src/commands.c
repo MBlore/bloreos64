@@ -43,7 +43,6 @@ typedef struct {
 } command_t;
 
 static void command_ls(int argc, char **argv);
-static void command_cat(int argc, char **argv);
 static void command_mkdir(int argc, char **argv);
 static void command_rmdir(int argc, char **argv);
 static void command_touch(int argc, char **argv);
@@ -61,7 +60,6 @@ static void command_stat(int argc, char **argv);
  */
 static const command_t commands[] = {
     { "ls", command_ls },
-    { "cat", command_cat },
     { "mkdir", command_mkdir },
     { "rmdir", command_rmdir },
     { "touch", command_touch },
@@ -189,52 +187,6 @@ static void command_ls(int argc, char **argv)
     if (result != OS_OK) {
         command_error("ls", result);
     }
-}
-
-/*
- * Prints a regular file's contents using a resolved VFS path.
- */
-static void command_cat(int argc, char **argv)
-{
-    if (argc != 2) {
-        tprintf("Usage: cat <path>\n");
-        return;
-    }
-
-    char path[COMMAND_PATH_MAX];
-
-    if (!command_get_path("cat", argv[1], path, sizeof(path))) {
-        return;
-    }
-
-    vfs_file_t file = {0};
-    os_error_t result = vfs_open(path, VFS_OPEN_READ, &file);
-
-    if (result != OS_OK) {
-        command_error("cat", result);
-        return;
-    }
-
-    char buffer[COMMAND_READ_SIZE + 1];
-
-    while (true) {
-        int64_t count = vfs_read(&file, buffer, COMMAND_READ_SIZE);
-
-        if (count < 0) {
-            tprintf("cat: Read failed\n");
-            break;
-        }
-
-        if (count == 0) {
-            break;
-        }
-
-        buffer[count] = '\0';
-        tprintf("%s", buffer);
-    }
-
-    vfs_close(&file);
-    tprintf("\n");
 }
 
 /*

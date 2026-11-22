@@ -114,7 +114,7 @@ USERLAND_LDFLAGS := -nostdlib -static -z max-page-size=0x1000
 .PHONY: userland
 userland: $(USERLAND_PROGRAMS)
 
-userland/bin/%: userland/%/main.c userland/%/linker.ld GNUmakefile
+userland/bin/%: userland/%/main.c userland/%/linker.ld userland/crt0.S GNUmakefile
 	mkdir -p userland/bin
 	$(CC) $(USERLAND_CFLAGS) -c $< -o userland/$*/main.o
 	$(CC) $(USERLAND_CFLAGS) -c userland/crt0.S -o userland/$*/crt0.o
