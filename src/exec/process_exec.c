@@ -78,13 +78,8 @@ static void process_thread_entry(void)
 }
 
 /*
- * Loads an ELF64 executable from the VFS and runs it synchronously in Ring 3.
- *
- * The executable receives a private address space and user stack. Once it
- * exits through the current syscall mechanism, the kernel restores its
- * original address space and releases the executable's memory.
- *
- * Only one foreground user process is supported at this stage.
+ * Loads an ELF64 executable from the VFS and executes it as a
+ * scheduled user thread. The calling thread waits for termination.
  */
 bool process_exec(const char *path)
 {
@@ -151,14 +146,14 @@ bool process_exec(const char *path)
     * Reserve the upper half of the kernel stack for Ring 3 interrupts.
     * The scheduled kernel context uses the lower half.
     */
-    if (!kthread_prepare(thread, process_thread_entry, thread->kernel_stack, 8 * 1024)) {
+    if (!kthread_prepare(thread, process_thread_entry, thread->kernel_stack, THREAD_KERNEL_EXEC_STACK_SIZE)) {
         goto cleanup;
     }
 
     /*
     * The CPU enters the upper half when an interrupt arrives from Ring 3.
     */
-    thread->kernel_stack_top = (uint64_t)thread->kernel_stack + 16 * 1024;
+    thread->kernel_stack_top = (uint64_t)thread->kernel_stack + THREAD_KERNEL_STACK_SIZE;
 
     /*
     * The calling thread must be registered before we can yield.
@@ -181,8 +176,6 @@ bool process_exec(const char *path)
     while (thread->state != THREAD_TERMINATED) {
         scheduler_yield();
     }
-
-    scheduler_reap();
 
     /*
     * Remove the terminated thread before destroying it.

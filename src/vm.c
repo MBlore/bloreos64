@@ -1067,11 +1067,17 @@ bool vm_switch_address_space(uint64_t page_table_root)
 }
 
 /*
- * Translates a user-accessible virtual address to a physical address.
+ * Translates a user-space virtual address to a physical address.
  *
- * Every paging level must be present and marked user-accessible.
+ * Validates that every paging level is present and user-accessible.
+ * When writable is true, also requires write permission at every level.
+ *
+ * Returns:
+ *   True on success, or false if translation or access validation fails.
  */
-bool vm_translate_user(uint64_t virt_addr, uint64_t *phys_addr)
+static bool vm_translate_user_access(uint64_t virt_addr,
+                                     uint64_t *phys_addr,
+                                     bool writable)
 {
     if (phys_addr == NULL) {
         return false;
@@ -1089,8 +1095,11 @@ bool vm_translate_user(uint64_t virt_addr, uint64_t *phys_addr)
         return false;
     }
 
-    const uint64_t address_mask = ((1ULL << maxphyaddr) - 1) & ~(PAGE_SIZE - 1ULL);
-    const uint64_t required_flags = PAGE_PRESENT | PAGE_USER;
+    const uint64_t address_mask =
+        ((1ULL << maxphyaddr) - 1) & ~(PAGE_SIZE - 1ULL);
+
+    const uint64_t required_flags =
+        PAGE_PRESENT | PAGE_USER | (writable ? PAGE_RW : 0);
 
     uint64_t table_address = get_cr3() & address_mask;
 
@@ -1121,7 +1130,8 @@ bool vm_translate_user(uint64_t virt_addr, uint64_t *phys_addr)
 
     if (pdpte & PAGE_PS) {
         const uint64_t offset_mask = PAGE_SIZE_1GB - 1;
-        *phys_addr = (pdpte & address_mask & ~offset_mask) | (virt_addr & offset_mask);
+        *phys_addr = (pdpte & address_mask & ~offset_mask) |
+                     (virt_addr & offset_mask);
         return true;
     }
 
@@ -1134,7 +1144,8 @@ bool vm_translate_user(uint64_t virt_addr, uint64_t *phys_addr)
 
     if (pde & PAGE_PS) {
         const uint64_t offset_mask = PAGE_SIZE_2MB - 1;
-        *phys_addr = (pde & address_mask & ~offset_mask) | (virt_addr & offset_mask);
+        *phys_addr = (pde & address_mask & ~offset_mask) |
+                     (virt_addr & offset_mask);
         return true;
     }
 
@@ -1147,4 +1158,27 @@ bool vm_translate_user(uint64_t virt_addr, uint64_t *phys_addr)
 
     *phys_addr = (pte & address_mask) | PAGE_OFFSET(virt_addr);
     return true;
+}
+
+/*
+ * Translates a readable user-space virtual address.
+ *
+ * Returns:
+ *   True on success, or false if the address is inaccessible.
+ */
+bool vm_translate_user(uint64_t virt_addr, uint64_t *phys_addr)
+{
+    return vm_translate_user_access(virt_addr, phys_addr, false);
+}
+
+/*
+ * Translates a writable user-space virtual address.
+ *
+ * Returns:
+ *   True on success, or false if the address is inaccessible
+ *   or does not have write permission.
+ */
+bool vm_translate_user_write(uint64_t virt_addr, uint64_t *phys_addr)
+{
+    return vm_translate_user_access(virt_addr, phys_addr, true);
 }

@@ -94,4 +94,14 @@ bool vm_switch_address_space(uint64_t page_table_root);
 
 bool vm_translate_user(uint64_t virt_addr, uint64_t *phys_addr);
 
+/*
+ * Translates a writable user-space virtual address to a physical address.
+ *
+ * Every paging level must be present, user-accessible and writable.
+ *
+ * Returns:
+ *   True on success, or false if the address is invalid or not writable.
+ */
+bool vm_translate_user_write(uint64_t virt_addr, uint64_t *phys_addr);
+
 #endif

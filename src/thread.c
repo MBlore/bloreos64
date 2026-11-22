@@ -19,8 +19,6 @@
 #include <mem.h>
 #include <string.h>
 
-#define THREAD_KERNEL_STACK_SIZE (16 * 1024)
-
 /*
  * Allocates and initialises a thread structure.
  *

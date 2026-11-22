@@ -94,3 +94,84 @@ int copy_from_user(void *destination, const void *source, size_t length)
 
     return 0;
 }
+
+
+/*
+ * Copies data from kernel memory into a user-space virtual address.
+ *
+ * Validates that every destination page is present, user-accessible
+ * and writable before modifying any user memory.
+ *
+ * Copies through the kernel's higher-half direct mapping rather than
+ * writing directly to user-space virtual addresses.
+ *
+ * Returns:
+ *   Zero on success, or -EFAULT if the destination is invalid.
+ */
+int copy_to_user(void *destination, const void *source, size_t length)
+{
+    if (length == 0) {
+        return 0;
+    }
+
+    if (destination == NULL || source == NULL) {
+        return -EFAULT;
+    }
+
+    uint64_t user_address = (uint64_t)destination;
+
+    // Reject address overflow.
+    if (length - 1 > UINT64_MAX - user_address) {
+        return -EFAULT;
+    }
+
+    // Validate the entire destination range before copying.
+    uint64_t page = user_address & ~(uint64_t)(PAGE_SIZE - 1);
+    uint64_t last_page =
+        (user_address + length - 1) & ~(uint64_t)(PAGE_SIZE - 1);
+
+    for (;;) {
+        uint64_t physical;
+
+        if (!vm_translate_user_write(page, &physical)) {
+            return -EFAULT;
+        }
+
+        if (page == last_page) {
+            break;
+        }
+
+        page += PAGE_SIZE;
+    }
+
+    // Copy data in chunks that never cross a page boundary.
+    const uint8_t *input = source;
+    size_t copied = 0;
+
+    while (copied < length) {
+        uint64_t address = user_address + copied;
+        uint64_t physical;
+
+        if (!vm_translate_user_write(address, &physical)) {
+            return -EFAULT;
+        }
+
+        size_t chunk = PAGE_SIZE - (address & (PAGE_SIZE - 1));
+        size_t remaining = length - copied;
+
+        if (chunk > remaining) {
+            chunk = remaining;
+        }
+
+        uint8_t *output =
+            (uint8_t *)(physical + vmm_higher_half_offset);
+
+        for (size_t i = 0; i < chunk; i++) {
+            output[i] = input[copied + i];
+        }
+
+        copied += chunk;
+    }
+
+    return 0;
+}

@@ -20,6 +20,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <vfs.h>
 
 typedef uint64_t pid_t;
 
@@ -29,11 +31,19 @@ typedef struct process_page {
     struct process_page *next;
 } process_page_t;
 
+#define PROCESS_MAX_FILES 16
+
+typedef struct process_file {
+    bool in_use;
+    vfs_file_t handle;
+} process_file_t;
+
 typedef struct process {
     pid_t pid;
     uint64_t page_table_root;
     uint64_t user_stack_pointer;
     process_page_t *owned_pages;
+    process_file_t files[PROCESS_MAX_FILES];
 } process_t;
 
 bool            process_alloc_page(process_t *process, uint64_t virt_addr, uint64_t flags);
@@ -42,5 +52,10 @@ void            *process_find_page(const process_t *process, uint64_t virt_addr)
 
 process_t       *process_create(void);
 void            process_destroy(process_t *process);
+
+int64_t         process_open(process_t *process, const char *path);
+int64_t         process_read(process_t *process, int fd,
+                     void *buffer, size_t count);
+int64_t         process_close(process_t *process, int fd);
 
 #endif

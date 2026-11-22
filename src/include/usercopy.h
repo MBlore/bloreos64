@@ -20,6 +20,22 @@
 
 #include <stddef.h>
 
+/*
+ * Copies data from kernel memory into a user-space buffer.
+ *
+ * Validates that the destination range is mapped and writable
+ * by the calling user process before copying any bytes.
+ *
+ * Returns:
+ *   Zero on success, or -EFAULT if the destination is invalid.
+ */
 int copy_from_user(void *destination, const void *source, size_t length);
+
+/*
+ * Copies data from a kernel buffer into writable user memory.
+ *
+ * Returns zero on success, or -EFAULT on failure.
+ */
+int copy_to_user(void *destination, const void *source, size_t length);
 
 #endif

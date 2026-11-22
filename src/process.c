@@ -57,6 +57,13 @@ void process_destroy(process_t *process)
         return;
     }
 
+    // Close any open files the process has.
+    for (int fd = 3; fd < PROCESS_MAX_FILES; fd++) {
+        if (process->files[fd].in_use) {
+            process_close(process, fd);
+        }
+    }
+
     if (process->page_table_root != 0) {
         process_free_pages(process);
         vm_destroy_address_space(process->page_table_root);
@@ -171,4 +178,63 @@ void process_free_pages(process_t *process)
     }
 
     process->owned_pages = NULL;
+}
+
+int64_t process_open(process_t *process, const char *path)
+{
+    if (process == NULL || path == NULL) {
+        return -1;
+    }
+
+    for (int fd = 3; fd < PROCESS_MAX_FILES; fd++) {
+        process_file_t *file = &process->files[fd];
+
+        if (file->in_use) {
+            continue;
+        }
+
+        if (vfs_open(path, VFS_OPEN_READ, &file->handle) != OS_OK) {
+            return -1;
+        }
+
+        file->in_use = true;
+        return fd;
+    }
+
+    return -1;
+}
+
+int64_t process_read(process_t *process, int fd,
+                     void *buffer, size_t count)
+{
+    if (process == NULL || buffer == NULL ||
+        fd < 3 || fd >= PROCESS_MAX_FILES) {
+        return -1;
+    }
+
+    process_file_t *file = &process->files[fd];
+
+    if (!file->in_use) {
+        return -1;
+    }
+
+    return vfs_read(&file->handle, buffer, count);
+}
+
+int64_t process_close(process_t *process, int fd)
+{
+    if (process == NULL || fd < 3 || fd >= PROCESS_MAX_FILES) {
+        return -1;
+    }
+
+    process_file_t *file = &process->files[fd];
+
+    if (!file->in_use) {
+        return -1;
+    }
+
+    vfs_close(&file->handle);
+    memset(file, 0, sizeof(*file));
+
+    return 0;
 }

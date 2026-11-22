@@ -21,6 +21,10 @@
 #include <stdint.h>
 #include <process.h>
 
+#define THREAD_KERNEL_STACK_SIZE           (16 * 1024)
+#define THREAD_KERNEL_EXEC_STACK_SIZE       (8 * 1024)
+#define THREAD_KERNEL_INTERRUPT_STACK_SIZE  (8 * 1024)
+
 typedef uint64_t tid_t;
 
 typedef enum {
