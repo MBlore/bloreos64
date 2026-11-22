@@ -21,6 +21,14 @@
 #include <stdbool.h>
 
 bool        commands_execute(char *line);
-const char  *commands_get_cwd(void);
+
+/*
+ * Returns the shell's current working directory.
+ *
+ * Returns:
+ *   Pointer to the shell-owned absolute path.
+ *   The caller must not modify or free it.
+ */
+const char *commands_get_cwd(void);
 
 #endif

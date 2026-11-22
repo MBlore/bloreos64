@@ -30,6 +30,7 @@
 #include <kthread.h>
 #include <kernel.h>
 #include <str.h>
+#include <commands.h>
 
 #include "loader.h"
 
@@ -278,6 +279,18 @@ bool process_exec(const char *path, int argc, char *const argv[])
         free(buffer);
         return false;
     }
+
+    // Copy the shells current working dir to the new process.
+    const char *cwd = commands_get_cwd();
+    size_t cwd_length = strlen(cwd);
+
+    if (cwd_length >= sizeof(process->cwd)) {
+        process_destroy(process);
+        free(buffer);
+        return false;
+    }
+
+    memcpy(process->cwd, cwd, cwd_length + 1);
 
     thread_t *thread = thread_create(process);
     if (thread == NULL) {

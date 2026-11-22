@@ -42,6 +42,10 @@ process_t *process_create(void)
 
     memset(process, 0, sizeof(process_t));
 
+    // Default process working dir.
+    process->cwd[0] = '/';
+    process->cwd[1] = '\0';
+
     return process;
 }
 
@@ -180,6 +184,119 @@ void process_free_pages(process_t *process)
     process->owned_pages = NULL;
 }
 
+/*
+ * Removes the last component of an absolute path.
+ *
+ * Parameters:
+ *   path   - Mutable absolute path.
+ *   length - Current path length, updated on return.
+ */
+static void process_path_parent(char *path, size_t *length)
+{
+    if (*length <= 1) {
+        return;
+    }
+
+    while (*length > 1 && path[*length - 1] != '/') {
+        (*length)--;
+    }
+
+    if (*length > 1) {
+        (*length)--;
+    }
+
+    path[*length] = '\0';
+}
+
+/*
+ * Resolves a pathname against a process's working directory.
+ *
+ * Supports absolute paths, relative paths, "." and "..".
+ *
+ * Parameters:
+ *   process  - Calling process.
+ *   input    - Requested pathname.
+ *   output   - Destination for the absolute path.
+ *   capacity - Destination buffer size.
+ *
+ * Returns:
+ *   True on success, otherwise false.
+ */
+static bool process_resolve_path(const process_t *process,
+                                 const char *input,
+                                 char *output,
+                                 size_t capacity)
+{
+    if (process == NULL || input == NULL ||
+        output == NULL || capacity < 2 ||
+        input[0] == '\0') {
+        return false;
+    }
+
+    size_t length = 1;
+    output[0] = '/';
+    output[1] = '\0';
+
+    if (input[0] != '/') {
+        size_t cwd_length = strlen(process->cwd);
+
+        if (cwd_length == 0 ||
+            process->cwd[0] != '/' ||
+            cwd_length >= capacity) {
+            return false;
+        }
+
+        memcpy(output, process->cwd, cwd_length + 1);
+        length = cwd_length;
+    }
+
+    const char *cursor = input;
+
+    while (*cursor != '\0') {
+        while (*cursor == '/') {
+            cursor++;
+        }
+
+        if (*cursor == '\0') {
+            break;
+        }
+
+        const char *component = cursor;
+
+        while (*cursor != '\0' && *cursor != '/') {
+            cursor++;
+        }
+
+        size_t component_length = (size_t)(cursor - component);
+
+        if (component_length == 1 && component[0] == '.') {
+            continue;
+        }
+
+        if (component_length == 2 &&
+            component[0] == '.' && component[1] == '.') {
+            process_path_parent(output, &length);
+            continue;
+        }
+
+        size_t separator_length = length > 1 ? 1 : 0;
+
+        if (component_length >= capacity - length - separator_length) {
+            return false;
+        }
+
+        if (separator_length != 0) {
+            output[length++] = '/';
+        }
+
+        memcpy(output + length, component, component_length);
+        length += component_length;
+        output[length] = '\0';
+    }
+
+    return true;
+}
+
 int64_t process_open(process_t *process, const char *path)
 {
     if (process == NULL || path == NULL) {
@@ -193,7 +310,13 @@ int64_t process_open(process_t *process, const char *path)
             continue;
         }
 
-        if (vfs_open(path, VFS_OPEN_READ, &file->handle) != OS_OK) {
+        char resolved[PROCESS_PATH_MAX];
+
+        if (!process_resolve_path(process, path, resolved, sizeof(resolved))) {
+            return -1;
+        }
+
+        if (vfs_open(resolved, VFS_OPEN_READ, &file->handle) != OS_OK) {
             return -1;
         }
 

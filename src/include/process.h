@@ -23,6 +23,8 @@
 #include <stddef.h>
 #include <vfs.h>
 
+#define PROCESS_PATH_MAX 1024
+
 typedef uint64_t pid_t;
 
 typedef struct process_page {
@@ -40,6 +42,7 @@ typedef struct process_file {
 
 typedef struct process {
     pid_t pid;
+    char cwd[PROCESS_PATH_MAX];
     uint64_t page_table_root;
     uint64_t user_stack_pointer;
     process_page_t *owned_pages;
