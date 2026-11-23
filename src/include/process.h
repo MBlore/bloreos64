@@ -35,9 +35,19 @@ typedef struct process_page {
 
 #define PROCESS_MAX_FILES 16
 
+typedef enum {
+    PROCESS_FD_NONE = 0,
+    PROCESS_FD_FILE,
+    PROCESS_FD_DIRECTORY
+} process_fd_type_t;
+
 typedef struct process_file {
-    bool in_use;
-    vfs_file_t handle;
+    process_fd_type_t type;
+
+    union {
+        vfs_file_t file;
+        vfs_dir_t directory;
+    } handle;
 } process_file_t;
 
 typedef struct process {
@@ -60,5 +70,9 @@ int64_t         process_open(process_t *process, const char *path);
 int64_t         process_read(process_t *process, int fd,
                      void *buffer, size_t count);
 int64_t         process_close(process_t *process, int fd);
+int64_t         process_opendir(process_t *process, const char *path);
+
+os_error_t      process_readdir(process_t *process, int fd,
+                           vfs_dirent_t *entry, bool *has_entry);
 
 #endif

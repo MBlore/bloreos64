@@ -183,7 +183,7 @@ static int64_t syscall_read(uint64_t fd, uint64_t user_buffer,
     }
 
     if (fd < 3 || fd >= PROCESS_MAX_FILES ||
-        !thread->process->files[fd].in_use) {
+        thread->process->files[fd].type == PROCESS_FD_NONE) {
         return -EBADF;
     }
 

@@ -64,7 +64,7 @@ void process_destroy(process_t *process)
 
     // Close any open files the process has.
     for (int fd = 3; fd < PROCESS_MAX_FILES; fd++) {
-        if (process->files[fd].in_use) {
+        if (process->files[fd].type != PROCESS_FD_NONE) {
             process_close(process, fd);
         }
     }
@@ -191,25 +191,64 @@ int64_t process_open(process_t *process, const char *path)
         return -1;
     }
 
-    for (int fd = 3; fd < PROCESS_MAX_FILES; fd++) {
-        process_file_t *file = &process->files[fd];
+    char resolved[PROCESS_PATH_MAX];
 
-        if (file->in_use) {
+    if (path_resolve(process->cwd, path,
+                     resolved, sizeof(resolved)) != OS_OK) {
+        return -1;
+    }
+
+    for (int fd = 3; fd < PROCESS_MAX_FILES; fd++) {
+        process_file_t *descriptor = &process->files[fd];
+
+        if (descriptor->type != PROCESS_FD_NONE) {
             continue;
         }
 
-        char resolved[PROCESS_PATH_MAX];
+        vfs_file_t file = {0};
 
-        if (path_resolve(process->cwd, path,
-                        resolved, sizeof(resolved)) != OS_OK) {
+        if (vfs_open(resolved, VFS_OPEN_READ, &file) != OS_OK) {
             return -1;
         }
 
-        if (vfs_open(resolved, VFS_OPEN_READ, &file->handle) != OS_OK) {
+        descriptor->handle.file = file;
+        descriptor->type = PROCESS_FD_FILE;
+
+        return fd;
+    }
+
+    return -1;
+}
+
+int64_t process_opendir(process_t *process, const char *path)
+{
+    if (process == NULL || path == NULL) {
+        return -1;
+    }
+
+    char resolved[PROCESS_PATH_MAX];
+
+    if (path_resolve(process->cwd, path,
+                     resolved, sizeof(resolved)) != OS_OK) {
+        return -1;
+    }
+
+    for (int fd = 3; fd < PROCESS_MAX_FILES; fd++) {
+        process_file_t *descriptor = &process->files[fd];
+
+        if (descriptor->type != PROCESS_FD_NONE) {
+            continue;
+        }
+
+        vfs_dir_t directory = {0};
+
+        if (vfs_opendir(resolved, &directory) != OS_OK) {
             return -1;
         }
 
-        file->in_use = true;
+        descriptor->handle.directory = directory;
+        descriptor->type = PROCESS_FD_DIRECTORY;
+
         return fd;
     }
 
@@ -224,13 +263,31 @@ int64_t process_read(process_t *process, int fd,
         return -1;
     }
 
-    process_file_t *file = &process->files[fd];
+    process_file_t *descriptor = &process->files[fd];
 
-    if (!file->in_use) {
+    if (descriptor->type != PROCESS_FD_FILE) {
         return -1;
     }
 
-    return vfs_read(&file->handle, buffer, count);
+    return vfs_read(&descriptor->handle.file, buffer, count);
+}
+
+os_error_t process_readdir(process_t *process, int fd,
+                           vfs_dirent_t *entry, bool *has_entry)
+{
+    if (process == NULL || entry == NULL || has_entry == NULL ||
+        fd < 3 || fd >= PROCESS_MAX_FILES) {
+        return OS_ERR_INVALID_ARGUMENT;
+    }
+
+    process_file_t *descriptor = &process->files[fd];
+
+    if (descriptor->type != PROCESS_FD_DIRECTORY) {
+        return OS_ERR_INVALID_ARGUMENT;
+    }
+
+    return vfs_readdir(&descriptor->handle.directory,
+                       entry, has_entry);
 }
 
 int64_t process_close(process_t *process, int fd)
@@ -239,14 +296,22 @@ int64_t process_close(process_t *process, int fd)
         return -1;
     }
 
-    process_file_t *file = &process->files[fd];
+    process_file_t *descriptor = &process->files[fd];
 
-    if (!file->in_use) {
-        return -1;
+    switch (descriptor->type) {
+        case PROCESS_FD_FILE:
+            vfs_close(&descriptor->handle.file);
+            break;
+
+        case PROCESS_FD_DIRECTORY:
+            vfs_closedir(&descriptor->handle.directory);
+            break;
+
+        default:
+            return -1;
     }
 
-    vfs_close(&file->handle);
-    memset(file, 0, sizeof(*file));
+    memset(descriptor, 0, sizeof(*descriptor));
 
     return 0;
 }

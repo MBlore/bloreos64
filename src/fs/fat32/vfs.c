@@ -73,26 +73,25 @@ static os_error_t fat32_vfs_rmdir(void *context, const char *path)
 }
 
 /*
- * Enumerates files and directories on a FAT32 volume.
+ * Opens a FAT32 directory for stateful enumeration.
  *
- * Resolves the directory path, opens its cluster iterator and
- * passes each entry to the VFS callback.
- *
- * Enumeration stops on completion, a filesystem error or a
- * non-success result returned by the callback.
+ * Allocates a private directory iterator which remains alive
+ * until fat32_vfs_closedir() is called.
  */
-static os_error_t fat32_vfs_listdir(void *context, const char *path,
-                                   os_error_t (*callback)(const vfs_dirent_t *entry, void *context),
-                                   void *callback_context)
+static os_error_t fat32_vfs_opendir(void *context, const char *path,
+                                   void **handle)
 {
-    if (context == NULL || path == NULL || callback == NULL) {
+    if (context == NULL || path == NULL || handle == NULL) {
         return OS_ERR_INVALID_ARGUMENT;
     }
+
+    *handle = NULL;
 
     const fat32_volume_t *volume = (const fat32_volume_t *)context;
     fat32_directory_record_t directory;
 
-    fat32_lookup_status_t lookup = fat32_path_resolve(volume, path, &directory);
+    fat32_lookup_status_t lookup =
+        fat32_path_resolve(volume, path, &directory);
 
     if (lookup == FAT32_LOOKUP_NOT_FOUND) {
         return OS_ERR_NOT_FOUND;
@@ -111,57 +110,98 @@ static os_error_t fat32_vfs_listdir(void *context, const char *path,
     }
 
     uint32_t cluster = fat32_get_first_cluster(&directory.entry);
-    fat32_directory_iterator_t iterator;
 
-    if (!fat32_directory_open(volume, cluster, &iterator)) {
+    fat32_directory_iterator_t *iterator =
+        kalloc(sizeof(fat32_directory_iterator_t));
+
+    if (iterator == NULL) {
+        return OS_ERR_OUT_OF_MEMORY;
+    }
+
+    if (!fat32_directory_open(volume, cluster, iterator)) {
+        kfree(iterator);
         return OS_ERR_IO;
     }
 
-    os_error_t result = OS_OK;
-    fat32_directory_record_t record;
+    *handle = iterator;
 
-    while (true) {
-        fat32_directory_status_t status = fat32_directory_next(&iterator, &record);
-
-        if (status == FAT32_DIR_END) {
-            break;
-        }
-
-        if (status == FAT32_DIR_ERROR) {
-            result = OS_ERR_IO;
-            break;
-        }
-
-        vfs_dirent_t entry;
-
-        memset(&entry, 0, sizeof(entry));
-
-        size_t length = strlen(record.name);
-
-        if (length >= sizeof(entry.name)) {
-            result = OS_ERR_NAME_TOO_LONG;
-            break;
-        }
-
-        memcpy(entry.name, record.name, length + 1);
-
-        entry.size = record.entry.file_size;
-        entry.is_directory = (record.entry.attributes & FAT32_ATTR_DIRECTORY) != 0;
-
-        fat32_timestamp_decode(&record.entry, &entry.created, &entry.modified, &entry.accessed);
-
-        result = callback(&entry, callback_context);
-
-        if (result != OS_OK) {
-            break;
-        }
-    }
-
-    fat32_directory_close(&iterator);
-
-    return result;
+    return OS_OK;
 }
 
+/*
+ * Returns the next FAT32 directory entry.
+ *
+ * Preserves the iterator position across calls, including long
+ * filename state and FAT cluster-chain traversal.
+ */
+static os_error_t fat32_vfs_readdir(void *handle,
+                                   vfs_dirent_t *entry,
+                                   bool *has_entry)
+{
+    if (handle == NULL || entry == NULL || has_entry == NULL) {
+        return OS_ERR_INVALID_ARGUMENT;
+    }
+
+    *has_entry = false;
+
+    fat32_directory_iterator_t *iterator =
+        (fat32_directory_iterator_t *)handle;
+
+    fat32_directory_record_t record;
+
+    fat32_directory_status_t status =
+        fat32_directory_next(iterator, &record);
+
+    if (status == FAT32_DIR_END) {
+        return OS_OK;
+    }
+
+    if (status == FAT32_DIR_ERROR) {
+        return OS_ERR_IO;
+    }
+
+    memset(entry, 0, sizeof(*entry));
+
+    size_t length = strlen(record.name);
+
+    if (length >= sizeof(entry->name)) {
+        return OS_ERR_NAME_TOO_LONG;
+    }
+
+    memcpy(entry->name, record.name, length + 1);
+
+    entry->size = record.entry.file_size;
+
+    entry->is_directory =
+        (record.entry.attributes & FAT32_ATTR_DIRECTORY) != 0;
+
+    fat32_timestamp_decode(
+        &record.entry,
+        &entry->created,
+        &entry->modified,
+        &entry->accessed
+    );
+
+    *has_entry = true;
+
+    return OS_OK;
+}
+
+/*
+ * Releases an open FAT32 directory iterator and its cluster buffer.
+ */
+static void fat32_vfs_closedir(void *handle)
+{
+    if (handle == NULL) {
+        return;
+    }
+
+    fat32_directory_iterator_t *iterator =
+        (fat32_directory_iterator_t *)handle;
+
+    fat32_directory_close(iterator);
+    kfree(iterator);
+}
 
 /*
  * Retrieves metadata for a FAT32 file or directory.
@@ -372,7 +412,9 @@ const vfs_driver_t fat32_vfs_driver = {
     .name = "FAT32",
     .mkdir = fat32_vfs_mkdir,
     .rmdir = fat32_vfs_rmdir,
-    .listdir = fat32_vfs_listdir,
+    .opendir = fat32_vfs_opendir,
+    .readdir = fat32_vfs_readdir,
+    .closedir = fat32_vfs_closedir,
     .stat = fat32_vfs_stat,
     .open = fat32_vfs_open,
     .read = fat32_vfs_read,

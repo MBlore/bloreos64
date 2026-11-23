@@ -148,7 +148,7 @@ static os_error_t command_ls_entry(const vfs_dirent_t *entry, void *context)
 }
 
 /*
- * Lists a directory in normal or long format.
+ * Lists a directory using the stateful VFS directory API.
  *
  * Supported forms:
  *   ls
@@ -183,7 +183,33 @@ static void command_ls(int argc, char **argv)
         return;
     }
 
-    os_error_t result = vfs_listdir(path, command_ls_entry, &long_format);
+    vfs_dir_t dir = {0};
+
+    os_error_t result = vfs_opendir(path, &dir);
+
+    if (result != OS_OK) {
+        command_error("ls", result);
+        return;
+    }
+
+    while (true) {
+        vfs_dirent_t entry;
+        bool has_entry = false;
+
+        result = vfs_readdir(&dir, &entry, &has_entry);
+
+        if (result != OS_OK || !has_entry) {
+            break;
+        }
+
+        result = command_ls_entry(&entry, &long_format);
+
+        if (result != OS_OK) {
+            break;
+        }
+    }
+
+    vfs_closedir(&dir);
 
     if (result != OS_OK) {
         command_error("ls", result);

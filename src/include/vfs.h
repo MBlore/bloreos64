@@ -51,6 +51,15 @@ typedef struct {
     uint32_t flags;
 } vfs_file_t;
 
+/*
+ * Represents an open directory in the VFS.
+ */
+typedef struct {
+    const vfs_driver_t *driver;
+    void *context;
+    void *private_data;
+} vfs_dir_t;
+
 typedef struct {
     uint16_t year;
     uint8_t month;
@@ -85,9 +94,11 @@ struct vfs_driver {
 
     os_error_t  (*mkdir)(void *context, const char *path);
     os_error_t  (*rmdir)(void *context, const char *path);
-    os_error_t  (*listdir)(void *context, const char *path,
-                      os_error_t (*callback)(const vfs_dirent_t *entry, void *context),
-                      void *callback_context);
+    os_error_t  (*opendir)(void *context, const char *path,
+                        void **handle);
+    os_error_t  (*readdir)(void *handle, vfs_dirent_t *entry,
+                        bool *has_entry);
+    void        (*closedir)(void *handle);
     os_error_t  (*stat)(void *context, const char *path, vfs_stat_t *stat);
     os_error_t  (*open)(void *context, const char *path, uint32_t flags, void **handle);
     int64_t     (*read)(void *handle, void *buffer, size_t count);
@@ -108,9 +119,12 @@ os_error_t          vfs_mount(const char *path, const vfs_driver_t *driver, void
 const vfs_mount_t   *vfs_resolve(const char *path, const char **relative_path);
 os_error_t          vfs_mkdir(const char *path);
 os_error_t          vfs_rmdir(const char *path);
-os_error_t          vfs_listdir(const char *path,
-                                os_error_t (*callback)(const vfs_dirent_t *entry, void *context),
-                                void *context);
+os_error_t          vfs_opendir(const char *path, vfs_dir_t *dir);
+
+os_error_t          vfs_readdir(vfs_dir_t *dir, vfs_dirent_t *entry,
+                       bool *has_entry);
+
+void                vfs_closedir(vfs_dir_t *dir);
 os_error_t          vfs_stat(const char *path, vfs_stat_t *stat);
 os_error_t          vfs_open(const char *path, uint32_t flags, vfs_file_t *file);
 int64_t             vfs_read(vfs_file_t *file, void *buffer, size_t count);
