@@ -43,7 +43,6 @@ typedef struct {
     command_handler_t handler;
 } command_t;
 
-static void command_ls(int argc, char **argv);
 static void command_mkdir(int argc, char **argv);
 static void command_rmdir(int argc, char **argv);
 static void command_touch(int argc, char **argv);
@@ -54,13 +53,11 @@ static void command_cd(int argc, char **argv);
 static void command_date(int argc, char **argv);
 static void command_uptime(int argc, char **argv);
 static bool command_get_path(const char *name, const char *argument, char *path, size_t capacity);
-static void command_stat(int argc, char **argv);
 
 /*
  * Registers the filesystem command names and their handlers.
  */
 static const command_t commands[] = {
-    { "ls", command_ls },
     { "mkdir", command_mkdir },
     { "rmdir", command_rmdir },
     { "touch", command_touch },
@@ -69,8 +66,7 @@ static const command_t commands[] = {
     { "pwd", command_pwd },
     { "cd", command_cd },
     { "date", command_date },
-    { "uptime", command_uptime },
-    { "stat", command_stat }
+    { "uptime", command_uptime }
 };
 
 /*
@@ -101,119 +97,6 @@ static void command_help(int argc, char **argv)
 static void command_error(const char *name, os_error_t result)
 {
     tprintf("%s: %s\n", name, os_error_string(result));
-}
-
-/*
- * Prints a VFS calendar timestamp as YYYY-MM-DD HH:MM.
- *
- * Unknown timestamps display a placeholder. FAT32 modification
- * times have two-second resolution, so seconds are omitted.
- */
-static void command_print_timestamp(const vfs_datetime_t *dt)
-{
-    if (!dt->valid || !dt->has_time) {
-        tprintf("---- -- -- --:--");
-        return;
-    }
-
-    tprintf("%u-%c%c-%c%c %c%c:%c%c",
-            (unsigned int)dt->year,
-            '0' + dt->month / 10, '0' + dt->month % 10,
-            '0' + dt->day / 10, '0' + dt->day % 10,
-            '0' + dt->hour / 10, '0' + dt->hour % 10,
-            '0' + dt->minute / 10, '0' + dt->minute % 10);
-}
-
-/*
- * Displays one directory entry in normal or long-listing format.
- *
- * The callback context points to the long-format flag.
- */
-static os_error_t command_ls_entry(const vfs_dirent_t *entry, void *context)
-{
-    bool long_format = *(const bool *)context;
-
-    if (long_format) {
-        command_print_timestamp(&entry->modified);
-        tprintf("  ");
-    }
-
-    if (entry->is_directory) {
-        tprintf("<DIR>  %s\n", entry->name);
-    } else {
-        tprintf("       %s (%lu bytes)\n", entry->name, (unsigned long)entry->size);
-    }
-
-    return OS_OK;
-}
-
-/*
- * Lists a directory using the stateful VFS directory API.
- *
- * Supported forms:
- *   ls
- *   ls <path>
- *   ls -l
- *   ls -l <path>
- */
-static void command_ls(int argc, char **argv)
-{
-    bool long_format = false;
-    const char *requested = ".";
-
-    if (argc >= 2 && strcmp(argv[1], "-l") == 0) {
-        long_format = true;
-
-        if (argc == 3) {
-            requested = argv[2];
-        } else if (argc > 3) {
-            tprintf("Usage: ls [-l] [path]\n");
-            return;
-        }
-    } else if (argc == 2) {
-        requested = argv[1];
-    } else if (argc > 2) {
-        tprintf("Usage: ls [-l] [path]\n");
-        return;
-    }
-
-    char path[COMMAND_PATH_MAX];
-
-    if (!command_get_path("ls", requested, path, sizeof(path))) {
-        return;
-    }
-
-    vfs_dir_t dir = {0};
-
-    os_error_t result = vfs_opendir(path, &dir);
-
-    if (result != OS_OK) {
-        command_error("ls", result);
-        return;
-    }
-
-    while (true) {
-        vfs_dirent_t entry;
-        bool has_entry = false;
-
-        result = vfs_readdir(&dir, &entry, &has_entry);
-
-        if (result != OS_OK || !has_entry) {
-            break;
-        }
-
-        result = command_ls_entry(&entry, &long_format);
-
-        if (result != OS_OK) {
-            break;
-        }
-    }
-
-    vfs_closedir(&dir);
-
-    if (result != OS_OK) {
-        command_error("ls", result);
-    }
 }
 
 /*
@@ -556,77 +439,4 @@ static void command_uptime(int argc, char **argv)
 
     tprintf("Uptime: %lu hours, %lu minutes, %lu seconds\n",
             (unsigned long)hours, (unsigned long)minutes, (unsigned long)remaining);
-}
-
-/*
- * Prints a VFS date and optional time in a human-readable format.
- *
- * Missing timestamps are reported as Unknown. Filesystems with
- * date-only access timestamps omit the time-of-day portion.
- */
-static void command_stat_datetime(const vfs_datetime_t *dt)
-{
-    if (!dt->valid) {
-        tprintf("Unknown\n");
-        return;
-    }
-
-    tprintf("%u-%c%c-%c%c",
-            (unsigned int)dt->year,
-            '0' + dt->month / 10, '0' + dt->month % 10,
-            '0' + dt->day / 10, '0' + dt->day % 10);
-
-    if (dt->has_time) {
-        tprintf(" %c%c:%c%c:%c%c",
-                '0' + dt->hour / 10, '0' + dt->hour % 10,
-                '0' + dt->minute / 10, '0' + dt->minute % 10,
-                '0' + dt->second / 10, '0' + dt->second % 10);
-    }
-
-    tprintf("\n");
-}
-
-/*
- * Displays metadata for a file or directory through the VFS.
- *
- * Resolves relative paths against the current working directory.
- * Reports size, file type, creation, modification and access
- * timestamps, and filesystem attribute flags.
- */
-static void command_stat(int argc, char **argv)
-{
-    if (argc != 2) {
-        tprintf("Usage: stat <path>\n");
-        return;
-    }
-
-    char path[COMMAND_PATH_MAX];
-
-    if (!command_get_path("stat", argv[1], path, sizeof(path))) {
-        return;
-    }
-
-    vfs_stat_t stat;
-    os_error_t result = vfs_stat(path, &stat);
-
-    if (result != OS_OK) {
-        command_error("stat", result);
-        return;
-    }
-
-    tprintf("  File:       %s\n", path);
-    tprintf("  Type:       %s\n",
-            stat.type == VFS_TYPE_DIRECTORY ? "Directory" : "Regular file");
-    tprintf("  Size:       %lu bytes\n", (unsigned long)stat.size);
-
-    tprintf("  Created:    ");
-    command_stat_datetime(&stat.created);
-
-    tprintf("  Modified:   ");
-    command_stat_datetime(&stat.modified);
-
-    tprintf("  Accessed:   ");
-    command_stat_datetime(&stat.accessed);
-
-    tprintf("  Attributes: 0x%X\n", (uint64_t)stat.attributes);
 }

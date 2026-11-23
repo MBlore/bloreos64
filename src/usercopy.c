@@ -21,6 +21,7 @@
 #include <vm.h>
 #include <usercopy.h>
 #include <abi/errno.h>
+#include <math.h>
 
 /*
  * Copies data from a user-space virtual address into a kernel buffer.
@@ -126,22 +127,21 @@ int copy_to_user(void *destination, const void *source, size_t length)
     }
 
     // Validate the entire destination range before copying.
-    uint64_t page = user_address & ~(uint64_t)(PAGE_SIZE - 1);
-    uint64_t last_page =
-        (user_address + length - 1) & ~(uint64_t)(PAGE_SIZE - 1);
+    uint64_t first_page_start = ALIGN_DOWN(user_address, PAGE_SIZE);
+    uint64_t last_page_start = ALIGN_DOWN(user_address + length - 1, PAGE_SIZE);
 
     for (;;) {
         uint64_t physical;
 
-        if (!vm_translate_user_write(page, &physical)) {
+        if (!vm_translate_user_write(first_page_start, &physical)) {
             return -EFAULT;
         }
 
-        if (page == last_page) {
+        if (first_page_start == last_page_start) {
             break;
         }
 
-        page += PAGE_SIZE;
+        first_page_start += PAGE_SIZE;
     }
 
     // Copy data in chunks that never cross a page boundary.

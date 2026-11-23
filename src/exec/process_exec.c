@@ -239,9 +239,6 @@ static void process_thread_entry(void)
  */
 bool process_exec(const char *path, int argc, char *const argv[])
 {
-    (void)argc;
-    (void)argv;
-
     if (path == NULL || path[0] != '/') {
         return false;
     }

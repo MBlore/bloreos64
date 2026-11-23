@@ -29,6 +29,9 @@
 /* Aligns val to the next highest multiple of align, e.g. val 10 and align 8 results in 16 */
 #define ALIGN_UP(val, align) (((val) + (align) - 1) / (align)) * (align)
 
+/* Aligns val down to the nearest multiple of align. */
+#define ALIGN_DOWN(val, align) (((val) / (align)) * (align))
+
 #define IS_BIT_SET(var, pos) (((var) >> (pos)) & 1)
 
 #endif

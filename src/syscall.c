@@ -22,14 +22,19 @@
 #include <mem.h>
 #include <vm.h>
 #include <terminal.h>
-#include <abi/syscall.h>
-#include <abi/errno.h>
-#include <abi/unistd.h>
 #include <usercopy.h>
 #include <thread.h>
 #include <scheduler.h>
 #include <process.h>
+#include <path.h>
+#include <string.h>
+
+#include <abi/syscall.h>
+#include <abi/errno.h>
+#include <abi/unistd.h>
 #include <abi/dirent.h>
+#include <abi/stat.h>
+#include <abi/fcntl.h>
 
 #define SYSCALL_MAX_PATH 256
 
@@ -195,6 +200,96 @@ static int64_t syscall_openat(uint64_t dirfd,
     );
 }
 
+/*
+ * Retrieves file metadata using a pathname relative to the process CWD.
+ *
+ * Currently supports AT_FDCWD for relative paths and absolute paths
+ * independently of dirfd. Flags must be zero.
+ *
+ * Returns zero on success or negative errno on failure.
+ */
+static int64_t syscall_fstatat(uint64_t dirfd, uint64_t user_path, uint64_t user_stat)
+{
+    thread_t *thread = scheduler_current();
+
+    if (thread == NULL || thread->process == NULL) {
+        return -EPERM;
+    }
+
+    if (user_stat == 0) {
+        return -EFAULT;
+    }
+
+    char path[SYSCALL_MAX_PATH];
+
+    int result = copy_user_path(user_path, path, sizeof(path));
+
+    if (result != 0) {
+        return result;
+    }
+
+    if ((int64_t)dirfd != AT_FDCWD && path[0] != '/') {
+        return -ENOTSUP;
+    }
+
+    char resolved[PROCESS_PATH_MAX];
+
+    os_error_t status = path_resolve(thread->process->cwd, path, resolved, sizeof(resolved));
+
+    if (status == OS_ERR_NAME_TOO_LONG) {
+        return -ENAMETOOLONG;
+    }
+
+    if (status != OS_OK) {
+        return -EINVAL;
+    }
+
+    vfs_stat_t vfs_info;
+
+    status = vfs_stat(resolved, &vfs_info);
+
+    if (status == OS_ERR_NOT_FOUND) {
+        return -ENOENT;
+    }
+
+    if (status == OS_ERR_NOT_DIRECTORY) {
+        return -ENOTDIR;
+    }
+
+    if (status == OS_ERR_ACCESS_DENIED) {
+        return -EACCES;
+    }
+
+    if (status != OS_OK) {
+        return -EIO;
+    }
+
+    struct stat info = {0};
+
+    info.st_size = vfs_info.size;
+    info.st_mode = vfs_info.type == VFS_TYPE_DIRECTORY ? S_IFDIR : S_IFREG;
+    info.st_attributes = vfs_info.attributes;
+
+    info.st_ctime = (os_stat_time_t) {
+        vfs_info.created.year, vfs_info.created.month, vfs_info.created.day,
+        vfs_info.created.hour, vfs_info.created.minute, vfs_info.created.second,
+        vfs_info.created.valid, vfs_info.created.has_time
+    };
+
+    info.st_mtime = (os_stat_time_t) {
+        vfs_info.modified.year, vfs_info.modified.month, vfs_info.modified.day,
+        vfs_info.modified.hour, vfs_info.modified.minute, vfs_info.modified.second,
+        vfs_info.modified.valid, vfs_info.modified.has_time
+    };
+
+    info.st_atime = (os_stat_time_t) {
+        vfs_info.accessed.year, vfs_info.accessed.month, vfs_info.accessed.day,
+        vfs_info.accessed.hour, vfs_info.accessed.minute, vfs_info.accessed.second,
+        vfs_info.accessed.valid, vfs_info.accessed.has_time
+    };
+
+    return copy_to_user((void *)user_stat, &info, sizeof(info));
+}
 
 /*
  * Reads bytes from an open file into a Ring 3 process buffer.
@@ -442,6 +537,9 @@ uint64_t syscall_dispatch(uint64_t number, uint64_t arg1, uint64_t arg2,
 
         case SYS_GETDENTS64:
             return (uint64_t)syscall_getdents64(arg1, arg2, arg3);
+
+        case SYS_FSTATAT:
+            return (uint64_t)syscall_fstatat(arg1, arg2, arg3);
 
         default:
             return (uint64_t)-ENOSYS;

@@ -42,5 +42,6 @@
 #define SYS_EXIT        4
 #define SYS_OPENAT      5
 #define SYS_GETDENTS64  6
+#define SYS_FSTATAT     7
 
 #endif

@@ -1,4 +1,3 @@
-
 /*
     BloreOS - Operating System
     Copyright (C) 2023 Martin Blore
