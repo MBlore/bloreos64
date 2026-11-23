@@ -1,14 +1,15 @@
+
 # Nuke built-in rules and variables.
 override MAKEFLAGS += -rR
 
 .DEFAULT_GOAL := all
- 
+
 # This is the name that our final kernel executable will have.
 # Change as needed.
 override KERNEL := bloreos
 
 override IMAGE_NAME := image
- 
+
 # Convenience macro to reliably declare user overridable variables.
 define DEFAULT_VAR =
     ifeq ($(origin $1),default)
@@ -18,29 +19,29 @@ define DEFAULT_VAR =
         override $(1) := $(2)
     endif
 endef
- 
+
 # It is suggested to use a custom built cross toolchain to build a kernel.
 # We are using the standard "cc" here, it may work by using
 # the host system's toolchain, but this is not guaranteed.
 override DEFAULT_CC := cc
 $(eval $(call DEFAULT_VAR,CC,$(DEFAULT_CC)))
- 
+
 # Same thing for "ld" (the linker).
 override DEFAULT_LD := ld
 $(eval $(call DEFAULT_VAR,LD,$(DEFAULT_LD)))
- 
+
 # User controllable C flags.
 override DEFAULT_CFLAGS := -g -O2
 $(eval $(call DEFAULT_VAR,CFLAGS,$(DEFAULT_CFLAGS)))
- 
+
 # User controllable C preprocessor flags. We set none by default.
 override DEFAULT_CPPFLAGS :=
 $(eval $(call DEFAULT_VAR,CPPFLAGS,$(DEFAULT_CPPFLAGS)))
- 
+
 # User controllable nasm flags.
 override DEFAULT_NASMFLAGS := -F dwarf -g
 $(eval $(call DEFAULT_VAR,NASMFLAGS,$(DEFAULT_NASMFLAGS)))
- 
+
 # User controllable linker flags. We set none by default.
 override DEFAULT_LDFLAGS :=
 $(eval $(call DEFAULT_VAR,LDFLAGS,$(DEFAULT_LDFLAGS)))
@@ -49,7 +50,7 @@ $(eval $(call DEFAULT_VAR,LDFLAGS,$(DEFAULT_LDFLAGS)))
 override CFLAGS += \
     -Wall \
     -Wextra \
-	-Werror \
+    -Werror \
     -std=gnu11 \
     -ffreestanding \
     -fno-stack-protector \
@@ -63,7 +64,7 @@ override CFLAGS += \
     -mno-sse \
     -mno-sse2 \
     -mno-red-zone
- 
+
 # Internal C preprocessor flags that should not be changed by the user.
 override CPPFLAGS := \
     -I src \
@@ -73,8 +74,8 @@ override CPPFLAGS := \
     -MP \
     -g \
     -ggdb \
-    -save-temps=obj     # 
- 
+    -save-temps=obj     #
+
 # Internal linker flags that should not be changed by the user.
 override LDFLAGS += \
     -m elf_x86_64 \
@@ -85,12 +86,12 @@ override LDFLAGS += \
     -z text \
     -z max-page-size=0x1000 \
     -T linker.ld
- 
+
 # Internal nasm flags that should not be changed by the user.
 override NASMFLAGS += \
     -Wall \
     -f elf64
- 
+
 # Use "find" to glob all *.c, *.S, and *.asm files in the tree and obtain the
 # object and header dependency file names.
 override CFILES := $(shell cd src && find -L * -type f -name '*.c')
@@ -99,49 +100,76 @@ override NASMFILES := $(shell cd src && find -L * -type f -name '*.asm')
 override OBJ := $(addprefix obj/,$(CFILES:.c=.c.o) $(ASFILES:.S=.S.o) $(NASMFILES:.asm=.asm.o))
 override HEADER_DEPS := $(addprefix obj/,$(CFILES:.c=.c.d) $(ASFILES:.S=.S.d))
 
-# Build each userland program independently.
-USERLAND_DIRS := $(sort $(dir $(wildcard userland/*/main.c)))
-USERLAND_PROGRAMS := $(patsubst userland/%/main.c,userland/bin/%,$(wildcard userland/*/main.c))
+# ---------------------------------------------------------------------------
+# Userland C library
+# ---------------------------------------------------------------------------
+
+USERLAND_LIBC_SOURCES := $(wildcard userland/libc/src/*.c)
+USERLAND_LIBC_OBJECTS := $(USERLAND_LIBC_SOURCES:.c=.o)
+USERLAND_LIBC_DEPS := $(USERLAND_LIBC_OBJECTS:.o=.d)
+USERLAND_LIBC := userland/libc/libc.a
 
 USERLAND_CFLAGS := -O2 -Wall -Wextra -Werror -std=gnu11 \
     -ffreestanding -fno-stack-protector -fno-pie \
     -fno-asynchronous-unwind-tables -fno-unwind-tables \
     -m64 -mno-red-zone \
-    -I src/include
+    -MMD -MP \
+    -I src/include \
+    -I userland/libc/include
 
 USERLAND_LDFLAGS := -nostdlib -static -z max-page-size=0x1000
+
+# Compile each libc source into an object file.
+userland/libc/src/%.o: userland/libc/src/%.c GNUmakefile
+	$(CC) $(USERLAND_CFLAGS) -c $< -o $@
+
+# Build the static C library.
+$(USERLAND_LIBC): $(USERLAND_LIBC_OBJECTS)
+	ar rcs $@ $^
+
+# ---------------------------------------------------------------------------
+# Userland programs
+# ---------------------------------------------------------------------------
+
+# Discover programs automatically from userland/<name>/main.c.
+USERLAND_PROGRAMS := $(patsubst userland/%/main.c,userland/bin/%,$(wildcard userland/*/main.c))
 
 .PHONY: userland
 userland: $(USERLAND_PROGRAMS)
 
-userland/bin/%: userland/%/main.c userland/%/linker.ld userland/crt0.S GNUmakefile
+# Build each userland program and statically link libc.
+userland/bin/%: userland/%/main.c userland/%/linker.ld userland/crt0.S $(USERLAND_LIBC) GNUmakefile
 	mkdir -p userland/bin
 	$(CC) $(USERLAND_CFLAGS) -c $< -o userland/$*/main.o
 	$(CC) $(USERLAND_CFLAGS) -c userland/crt0.S -o userland/$*/crt0.o
-	$(LD) $(USERLAND_LDFLAGS) -T userland/$*/linker.ld -o $@ userland/$*/crt0.o userland/$*/main.o
+	$(LD) $(USERLAND_LDFLAGS) -T userland/$*/linker.ld \
+	    -o $@ userland/$*/crt0.o userland/$*/main.o $(USERLAND_LIBC)
+
+# Include libc header dependencies.
+-include $(USERLAND_LIBC_DEPS)
 
 # Default target.
 .PHONY: all
 all: deploy
- 
+
 # Link rules for the final kernel executable.
 bin/$(KERNEL): GNUmakefile linker.ld $(OBJ)
 	mkdir -p "$$(dirname $@)"
 	$(LD) $(OBJ) $(LDFLAGS) -o $@
- 
+
 # Include header dependencies.
 -include $(HEADER_DEPS)
- 
+
 # Compilation rules for *.c files.
 obj/%.c.o: src/%.c GNUmakefile
 	mkdir -p "$$(dirname $@)"
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
- 
+
 # Compilation rules for *.S files.
 obj/%.S.o: src/%.S GNUmakefile
 	mkdir -p "$$(dirname $@)"
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
- 
+
 # Compilation rules for *.asm (nasm) files.
 obj/%.asm.o: src/%.asm GNUmakefile
 	mkdir -p "$$(dirname $@)"
@@ -150,7 +178,7 @@ obj/%.asm.o: src/%.asm GNUmakefile
 .PHONY: dump
 dump:
 	objdump -d bin/bloreos > bin/code.asm
- 
+
 # Remove object files and the final executable.
 .PHONY: clean
 clean:
@@ -158,6 +186,11 @@ clean:
 	rm -f $(IMAGE_NAME).iso $(IMAGE_NAME).hdd
 	rm -rf userland/bin
 	rm -f userland/*/main.o
+	rm -f userland/*/main.d
+	rm -f userland/*/crt0.o
+	rm -f $(USERLAND_LIBC_OBJECTS)
+	rm -f $(USERLAND_LIBC_DEPS)
+	rm -f $(USERLAND_LIBC)
 
 .PHONY: run
 run: $(IMAGE_NAME).hdd data.hdd
