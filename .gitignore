@@ -10,3 +10,10 @@ image.iso
 /tests/bin/
 data.hdd
 data-directory-test.hdd
+
+# Compiled objects and dependency files
+*.o
+*.d
+
+# Static libraries
+*.a
