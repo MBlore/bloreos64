@@ -29,6 +29,7 @@
 #include <thread.h>
 #include <scheduler.h>
 #include <process.h>
+#include <abi/dirent.h>
 
 #define SYSCALL_MAX_PATH 256
 
@@ -96,39 +97,18 @@ static int64_t syscall_write(uint64_t fd, uint64_t user_buffer, uint64_t count)
 }
 
 /*
- * Opens a file requested by a Ring 3 process.
+ * Copies a null-terminated pathname from user memory.
  *
- * Copies a null-terminated pathname from user memory into a kernel-owned
- * buffer before passing it to the process file descriptor layer.
- *
- * Parameters:
- *   user_path - Virtual address of the pathname in user memory.
- *   flags     - Open flags. Must currently be zero.
- *
- * Returns:
- *   A file descriptor (>= 3) on success, or a negative errno value
- *   on failure.
+ * Returns zero on success or negative errno on failure.
  */
-static int64_t syscall_open(uint64_t user_path, uint64_t flags)
+static int copy_user_path(uint64_t user_path,
+                          char *path, size_t capacity)
 {
-    // Read-only files for now.
-    if (flags != 0) {
-        return -EINVAL;
-    }
-
-    thread_t *thread = scheduler_current();
-
-    if (thread == NULL || thread->process == NULL) {
-        return -EPERM;
-    }
-
     if (user_path == 0) {
         return -EFAULT;
     }
 
-    char path[SYSCALL_MAX_PATH];
-
-    for (size_t i = 0; i < sizeof(path); i++) {
+    for (size_t i = 0; i < capacity; i++) {
         if (user_path > UINT64_MAX - i) {
             return -EFAULT;
         }
@@ -144,19 +124,77 @@ static int64_t syscall_open(uint64_t user_path, uint64_t flags)
         }
 
         if (path[i] == '\0') {
-            if (i == 0) {
-                return -EINVAL;
-            }
-
-            int64_t fd = process_open(thread->process, path);
-
-            return fd < 0 ? -ENOENT : fd;
+            return i == 0 ? -EINVAL : 0;
         }
     }
 
-    // Path is too long or not null-terminated.
-    return -EINVAL;
+    return -ENAMETOOLONG;
 }
+
+static int64_t syscall_open(uint64_t user_path, uint64_t flags)
+{
+    if (flags != 0) {
+        return -EINVAL;
+    }
+
+    thread_t *thread = scheduler_current();
+
+    if (thread == NULL || thread->process == NULL) {
+        return -EPERM;
+    }
+
+    char path[SYSCALL_MAX_PATH];
+
+    int result = copy_user_path(
+        user_path, path, sizeof(path)
+    );
+
+    if (result != 0) {
+        return result;
+    }
+
+    int64_t fd = process_open(thread->process, path);
+
+    return fd < 0 ? -ENOENT : fd;
+}
+
+
+/*
+ * Opens a file or directory relative to a directory descriptor.
+ *
+ * Currently supports AT_FDCWD for relative paths.
+ * Absolute paths are accepted independently of dirfd.
+ *
+ * Returns a descriptor or negative errno.
+ */
+static int64_t syscall_openat(uint64_t dirfd,
+                              uint64_t user_path,
+                              uint64_t flags)
+{
+    thread_t *thread = scheduler_current();
+
+    if (thread == NULL || thread->process == NULL) {
+        return -EPERM;
+    }
+
+    char path[SYSCALL_MAX_PATH];
+
+    int result = copy_user_path(
+        user_path, path, sizeof(path)
+    );
+
+    if (result != 0) {
+        return result;
+    }
+
+    return process_openat(
+        thread->process,
+        (int)(int64_t)dirfd,
+        path,
+        (int)flags
+    );
+}
+
 
 /*
  * Reads bytes from an open file into a Ring 3 process buffer.
@@ -258,6 +296,86 @@ static int64_t syscall_read(uint64_t fd, uint64_t user_buffer,
     return (int64_t)total;
 }
 
+
+/*
+ * Reads directory entries into a Ring 3 buffer.
+ *
+ * Validates the entire destination range before advancing
+ * the directory cursor.
+ */
+static int64_t syscall_getdents64(uint64_t fd,
+                                  uint64_t user_buffer,
+                                  uint64_t count)
+{
+    thread_t *thread = scheduler_current();
+
+    if (thread == NULL || thread->process == NULL) {
+        return -EPERM;
+    }
+
+    if (fd < 3 || fd >= PROCESS_MAX_FILES ||
+        thread->process->files[fd].type == PROCESS_FD_NONE) {
+        return -EBADF;
+    }
+
+    if (thread->process->files[fd].type != PROCESS_FD_DIRECTORY) {
+        return -ENOTDIR;
+    }
+
+    if (count == 0 || count > INT64_MAX ||
+        count - 1 > UINT64_MAX - user_buffer) {
+        return -EINVAL;
+    }
+
+    // Validate every destination page before consuming entries.
+    uint64_t page = user_buffer & ~(uint64_t)(PAGE_SIZE - 1);
+    uint64_t last_page =
+        (user_buffer + count - 1) & ~(uint64_t)(PAGE_SIZE - 1);
+
+    for (;;) {
+        uint64_t physical;
+
+        if (!vm_translate_user_write(page, &physical)) {
+            return -EFAULT;
+        }
+
+        if (page == last_page) {
+            break;
+        }
+
+        page += PAGE_SIZE;
+    }
+
+    // Fixed-size kernel staging buffer.
+    // A record can be larger than this, so we use a buffer
+    // sufficient for the largest VFS filename.
+    uint8_t buffer[DIRENT64_RECLEN(VFS_MAX_NAME - 1)];
+
+    size_t capacity = (size_t)count;
+
+    if (capacity > sizeof(buffer)) {
+        capacity = sizeof(buffer);
+    }
+
+    int64_t result = process_getdents64(
+        thread->process, (int)fd, buffer, capacity
+    );
+
+    if (result <= 0) {
+        return result;
+    }
+
+    int copy_result = copy_to_user(
+        (void *)user_buffer, buffer, (size_t)result
+    );
+
+    if (copy_result != 0) {
+        return copy_result;
+    }
+
+    return result;
+}
+
 /*
  * Closes a file descriptor belonging to the calling Ring 3 process.
  *
@@ -318,6 +436,12 @@ uint64_t syscall_dispatch(uint64_t number, uint64_t arg1, uint64_t arg2,
 
         case SYS_CLOSE:
             return (uint64_t)syscall_close(arg1);
+
+        case SYS_OPENAT:
+            return (uint64_t)syscall_openat(arg1, arg2, arg3);
+
+        case SYS_GETDENTS64:
+            return (uint64_t)syscall_getdents64(arg1, arg2, arg3);
 
         default:
             return (uint64_t)-ENOSYS;

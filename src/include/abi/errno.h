@@ -29,5 +29,10 @@
 #define EEXIST  17
 #define EINVAL  22
 #define ENOSYS  38
+#define ENOTDIR 20
+#define EISDIR  21
+#define EMFILE  24
+#define ENAMETOOLONG 36
+#define ENOTSUP 95
 
 #endif

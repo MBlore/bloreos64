@@ -70,6 +70,8 @@ uint32_t cursor_y = 0;
 char input_str[256];
 spinlock_t _cursor_lock;
 bool cursor_visible = true;
+static bool left_shift_down = false;
+static bool right_shift_down = false;
 
 inline void term_fgcolor(uint32_t color)
 {
@@ -343,6 +345,26 @@ void _handle_cmd()
 */
 void term_keyevent(KeyEvent_t *ke)
 {
+    if (ke->scan_code == 42) {
+        left_shift_down = (ke->event_type == PS2_KEYDOWN);
+        return;
+    }
+
+    if (ke->scan_code == 170) {
+        left_shift_down = false;
+        return;
+    }
+
+    if (ke->scan_code == 54) {
+        right_shift_down = (ke->event_type == PS2_KEYDOWN);
+        return;
+    }
+
+    if (ke->scan_code == 182) {
+        right_shift_down = false;
+        return;
+    }
+
     if (ke->event_type == PS2_KEYDOWN && ke->scan_code == PS2_SCANCODE_ENTER) {
         // Remove the cursor from the completed input line.
         _clear_cursor();
@@ -393,6 +415,17 @@ void term_keyevent(KeyEvent_t *ke)
     }
 
     if (ke->event_type == PS2_KEYDOWN && ke->ascii != 0) {
+        char ascii = ke->ascii;
+        bool shift = left_shift_down || right_shift_down;
+
+        if (shift) {
+            if (ascii >= 'a' && ascii <= 'z') {
+                ascii -= ('a' - 'A');
+            } else if (ke->scan_code == 12) {
+                ascii = '_';
+            }
+        }
+
         size_t len = strlen(input_str);
 
         if (len >= sizeof(input_str) - 1) {
@@ -405,10 +438,10 @@ void term_keyevent(KeyEvent_t *ke)
 
         _clear_cursor();
 
-        input_str[len] = ke->ascii;
+        input_str[len] = ascii;
         input_str[len + 1] = '\0';
 
-        _render_glyph(ke->ascii, input_render_x, input_render_y);
+        _render_glyph(ascii, input_render_x, input_render_y);
         input_render_x += glyph_width;
 
         _render_cursor();

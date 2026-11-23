@@ -41,12 +41,20 @@ typedef enum {
     PROCESS_FD_DIRECTORY
 } process_fd_type_t;
 
+typedef struct process_directory {
+    vfs_dir_t handle;
+
+    // Entry fetched but not yet delivered to userspace.
+    vfs_dirent_t pending_entry;
+    bool has_pending_entry;
+} process_directory_t;
+
 typedef struct process_file {
     process_fd_type_t type;
 
     union {
         vfs_file_t file;
-        vfs_dir_t directory;
+        process_directory_t directory;
     } handle;
 } process_file_t;
 
@@ -74,5 +82,9 @@ int64_t         process_opendir(process_t *process, const char *path);
 
 os_error_t      process_readdir(process_t *process, int fd,
                            vfs_dirent_t *entry, bool *has_entry);
-
+int64_t         process_openat(process_t *process, int dirfd,
+                       const char *path, int flags);
+int64_t         process_getdents64(process_t *process, int fd,
+                           void *buffer, size_t count);
+                           
 #endif

@@ -23,6 +23,9 @@
 #include <mem.h>
 #include <alloc.h>
 #include <path.h>
+#include <abi/fcntl.h>
+#include <abi/errno.h>
+#include <abi/dirent.h>
 
 /*
  * Allocates and initialises a new process structure.
@@ -246,7 +249,8 @@ int64_t process_opendir(process_t *process, const char *path)
             return -1;
         }
 
-        descriptor->handle.directory = directory;
+        descriptor->handle.directory.handle = directory;
+        descriptor->handle.directory.has_pending_entry = false;
         descriptor->type = PROCESS_FD_DIRECTORY;
 
         return fd;
@@ -286,8 +290,8 @@ os_error_t process_readdir(process_t *process, int fd,
         return OS_ERR_INVALID_ARGUMENT;
     }
 
-    return vfs_readdir(&descriptor->handle.directory,
-                       entry, has_entry);
+    return vfs_readdir(&descriptor->handle.directory.handle,
+                   entry, has_entry);
 }
 
 int64_t process_close(process_t *process, int fd)
@@ -304,7 +308,7 @@ int64_t process_close(process_t *process, int fd)
             break;
 
         case PROCESS_FD_DIRECTORY:
-            vfs_closedir(&descriptor->handle.directory);
+            vfs_closedir(&descriptor->handle.directory.handle);
             break;
 
         default:
@@ -314,4 +318,202 @@ int64_t process_close(process_t *process, int fd)
     memset(descriptor, 0, sizeof(*descriptor));
 
     return 0;
+}
+
+/*
+ * Opens a file or directory and assigns a process-owned descriptor.
+ *
+ * Currently supports AT_FDCWD and read-only access.
+ * Returns a descriptor on success or negative errno on failure.
+ */
+int64_t process_openat(process_t *process, int dirfd,
+                       const char *path, int flags)
+{
+    if (process == NULL || path == NULL || path[0] == '\0') {
+        return -EINVAL;
+    }
+
+    if ((flags & ~(O_ACCMODE | O_DIRECTORY)) != 0 ||
+        (flags & O_ACCMODE) != O_RDONLY) {
+        return -EINVAL;
+    }
+
+    if (dirfd != AT_FDCWD && path[0] != '/') {
+        return -ENOTSUP;
+    }
+
+    char resolved[PROCESS_PATH_MAX];
+
+    os_error_t result = path_resolve(
+        process->cwd, path, resolved, sizeof(resolved)
+    );
+
+    if (result == OS_ERR_NAME_TOO_LONG) {
+        return -ENAMETOOLONG;
+    }
+
+    if (result != OS_OK) {
+        return -EINVAL;
+    }
+
+    int fd = -1;
+
+    for (int i = 3; i < PROCESS_MAX_FILES; i++) {
+        if (process->files[i].type == PROCESS_FD_NONE) {
+            fd = i;
+            break;
+        }
+    }
+
+    if (fd < 0) {
+        return -EMFILE;
+    }
+
+    vfs_stat_t stat;
+
+    result = vfs_stat(resolved, &stat);
+
+    switch (result) {
+        case OS_OK:
+            break;
+        case OS_ERR_NOT_FOUND:
+            return -ENOENT;
+        case OS_ERR_NOT_DIRECTORY:
+            return -ENOTDIR;
+        case OS_ERR_ACCESS_DENIED:
+            return -EACCES;
+        default:
+            return -EIO;
+    }
+
+    process_file_t *descriptor = &process->files[fd];
+
+    if (stat.type == VFS_TYPE_DIRECTORY) {
+        vfs_dir_t directory = {0};
+
+        result = vfs_opendir(resolved, &directory);
+
+        if (result != OS_OK) {
+            return -EIO;
+        }
+
+        descriptor->handle.directory.handle = directory;
+        descriptor->handle.directory.has_pending_entry = false;
+        descriptor->type = PROCESS_FD_DIRECTORY;
+    } else {
+        if (flags & O_DIRECTORY) {
+            return -ENOTDIR;
+        }
+
+        vfs_file_t file = {0};
+
+        result = vfs_open(resolved, VFS_OPEN_READ, &file);
+
+        if (result != OS_OK) {
+            return -EIO;
+        }
+
+        descriptor->handle.file = file;
+        descriptor->type = PROCESS_FD_FILE;
+    }
+
+    return fd;
+}
+
+
+/*
+ * Packs directory entries into Linux-compatible dirent64 records.
+ *
+ * The destination is a kernel-owned buffer, not a user pointer.
+ * A pending entry is retained if the next record cannot fit.
+ *
+ * Returns bytes written, zero at EOF, or negative errno.
+ */
+int64_t process_getdents64(process_t *process, int fd,
+                           void *buffer, size_t count)
+{
+    if (process == NULL) {
+        return -EINVAL;
+    }
+
+    if (fd < 3 || fd >= PROCESS_MAX_FILES) {
+        return -EBADF;
+    }
+
+    process_file_t *descriptor = &process->files[fd];
+
+    if (descriptor->type == PROCESS_FD_NONE) {
+        return -EBADF;
+    }
+
+    if (descriptor->type != PROCESS_FD_DIRECTORY) {
+        return -ENOTDIR;
+    }
+
+    if (buffer == NULL) {
+        return -EFAULT;
+    }
+
+    process_directory_t *directory = &descriptor->handle.directory;
+    size_t total = 0;
+
+    for (;;) {
+        if (!directory->has_pending_entry) {
+            bool has_entry = false;
+
+            os_error_t result = vfs_readdir(
+                &directory->handle,
+                &directory->pending_entry,
+                &has_entry
+            );
+
+            if (result != OS_OK) {
+                return total != 0 ? (int64_t)total : -EIO;
+            }
+
+            if (!has_entry) {
+                break;
+            }
+
+            directory->has_pending_entry = true;
+        }
+
+        vfs_dirent_t *entry = &directory->pending_entry;
+
+        size_t name_length = 0;
+
+        while (name_length < sizeof(entry->name) &&
+               entry->name[name_length] != '\0') {
+            name_length++;
+        }
+
+        if (name_length == sizeof(entry->name)) {
+            return total != 0 ? (int64_t)total : -EIO;
+        }
+
+        size_t record_length = DIRENT64_RECLEN(name_length);
+
+        if (record_length > count - total) {
+            return total != 0 ? (int64_t)total : -EINVAL;
+        }
+
+        struct linux_dirent64 *record =
+            (struct linux_dirent64 *)((char *)buffer + total);
+
+        memset(record, 0, record_length);
+
+        // Inode numbers and seek cookies are not yet exposed
+        // by the VFS. Zero indicates unavailable metadata.
+        record->d_ino = 0;
+        record->d_off = 0;
+        record->d_reclen = (uint16_t)record_length;
+        record->d_type = entry->is_directory ? DT_DIR : DT_REG;
+
+        memcpy(record->d_name, entry->name, name_length + 1);
+
+        total += record_length;
+        directory->has_pending_entry = false;
+    }
+
+    return (int64_t)total;
 }
