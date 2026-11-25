@@ -15,24 +15,10 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_TERMINAL_H
-#define _BLOREOS_TERMINAL_H
+#ifndef _BLOREOS_DESKTOP_H
+#define _BLOREOS_DESKTOP_H
 
-#include <stdint.h>
-#include <stddef.h>
-#include <ps2.h>
-
-#define TERM_DEFAULT_FGCOLOR 0xCCCCCC
-#define TERM_CURSOR_COLOR 0xFFFFFF
-
-void term_init();
-void tprintf(const char format[], ...);
-void term_fgcolor(uint32_t color);
-void term_bgcolor(uint32_t color);
-void term_keyevent(KeyEvent_t *ke);
-void term_cblink();
-void term_clear();
-void term_show_prompt(void);
-void term_write(const char *data, size_t length);
+void desktop_init(void);
+void desktop_show(void);
 
 #endif

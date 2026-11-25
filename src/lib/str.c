@@ -20,7 +20,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <serial.h>
-#include <terminal.h>
+#include <terminal/terminal.h>
 #include <limits.h>
 
 /* Reverses the string in str */

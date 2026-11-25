@@ -21,7 +21,7 @@
 #include <usermode.h>
 #include <mem.h>
 #include <vm.h>
-#include <terminal.h>
+#include <terminal/terminal.h>
 #include <usercopy.h>
 #include <thread.h>
 #include <scheduler.h>

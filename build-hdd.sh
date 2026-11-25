@@ -53,6 +53,7 @@ mcopy -n -v -i "$MTOOLS_IMAGE" limine/BOOTIA32.EFI ::/EFI/BOOT
 
 # Copy custom resources.
 mcopy -n -v -i "$MTOOLS_IMAGE" Font.psf ::/
+mcopy -n -v -i "$MTOOLS_IMAGE" Logo.bmp ::/
 
 # Install compiled userland executables into /bin.
 if [ -d "userland/bin" ]; then

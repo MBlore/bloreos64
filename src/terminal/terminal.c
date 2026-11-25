@@ -15,7 +15,7 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#include <terminal.h>
+#include <terminal/terminal.h>
 #include <stddef.h>
 #include <limine.h>
 #include <kernel.h>
@@ -28,6 +28,14 @@
 #include <idt.h>
 #include <time.h>
 #include <commands.h>
+
+#define TERM_BOOT_HISTORY_CAPACITY 16384
+
+typedef struct {
+    uint32_t foreground;
+    uint32_t background;
+    char character;
+} terminal_cell_t;
 
 typedef struct {
     uint16_t magic;         // Magic bytes for identification.
@@ -72,6 +80,16 @@ spinlock_t _cursor_lock;
 bool cursor_visible = true;
 static bool left_shift_down = false;
 static bool right_shift_down = false;
+
+static bool terminal_visible = false;
+
+/*
+ * Controls whether the terminal renders to the framebuffer.
+ */
+void term_set_visible(bool visible)
+{
+    terminal_visible = visible;
+}
 
 inline void term_fgcolor(uint32_t color)
 {

@@ -19,7 +19,7 @@
 #include <str.h>
 #include <string.h>
 #include <cpu.h>
-#include <terminal.h>
+#include <terminal/terminal.h>
 #include <thread.h>
 #include <kthread.h>
 #include <scheduler.h>

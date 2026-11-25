@@ -20,7 +20,7 @@
 #include <cpu.h>
 #include <thread.h>
 #include <kernel.h>
-#include <terminal.h>
+#include <terminal/terminal.h>
 #include <gdt.h>
 
 static thread_t *threads[SCHEDULER_MAX_THREADS];

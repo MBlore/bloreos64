@@ -34,7 +34,7 @@
 #include <lapic.h>
 #include <acpi.h>
 #include <ioapic.h>
-#include <terminal.h>
+#include <terminal/terminal.h>
 #include <queue.h>
 #include <hpet.h>
 #include <pit.h>
@@ -54,6 +54,7 @@
 #include <kthread.h>
 #include <thread.h>
 #include <scheduler.h>
+#include <desktop.h>
 
 #include "tests/tests.h"
 
@@ -183,6 +184,7 @@ void kernel_main(void)
 
     init_serial(PORT_COM1);
     term_init();
+    desktop_init();
 
     term_fgcolor(0x00FF00);
     klogf("BloreOS Alpha v0.01\n\n");
@@ -264,6 +266,8 @@ void kernel_main(void)
     klogf("System ready. Type 'help' for commands.\n\n");
 
     term_show_prompt();
+
+    desktop_show();
    
     // Process pending events or idle until an interrupt occurs.
     while(1) {

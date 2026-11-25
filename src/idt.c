@@ -21,7 +21,7 @@
 #include <string.h>
 #include <lapic.h>
 #include <ps2.h>
-#include <terminal.h>
+#include <terminal/terminal.h>
 #include <kernel.h>
 #include <serial.h>
 #include <hpet.h>

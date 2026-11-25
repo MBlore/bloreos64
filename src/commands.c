@@ -15,9 +15,8 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-
 #include <commands.h>
-#include <terminal.h>
+#include <terminal/terminal.h>
 #include <vfs.h>
 #include <error.h>
 #include <str.h>
