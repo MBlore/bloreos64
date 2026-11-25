@@ -36,5 +36,6 @@ void term_clear();
 void term_show_prompt(void);
 void term_write(const char *data, size_t length);
 void term_set_visible(bool visible);
+void term_set_viewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 
 #endif

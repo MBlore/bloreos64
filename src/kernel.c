@@ -265,9 +265,9 @@ void kernel_main(void)
     
     klogf("System ready. Type 'help' for commands.\n\n");
 
+    term_set_viewport(50, 50, 800, 500);
+    term_set_visible(true);
     term_show_prompt();
-
-    desktop_show();
    
     // Process pending events or idle until an interrupt occurs.
     while(1) {
