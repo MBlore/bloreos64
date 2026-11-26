@@ -18,7 +18,6 @@
 #include <terminal/terminal.h>
 #include <terminal/terminal_buffer.h>
 #include <stddef.h>
-#include <limine.h>
 #include <kernel.h>
 #include <stdarg.h>
 #include <str.h>
@@ -27,31 +26,10 @@
 #include <cpu.h>
 #include <time.h>
 #include <commands.h>
+#include <gfx/gfx.h>
 
 #define TERM_PROMPT_COLOR 0x44AAFF
 
-typedef struct {
-    uint16_t magic;
-    uint8_t fontMode;
-    uint8_t char_height;
-} __attribute__((packed)) PSF1_Header;
-
-struct limine_module_request file_request = {
-    .id = LIMINE_MODULE_REQUEST,
-    .revision = 0
-};
-
-struct limine_framebuffer_request framebuffer_request = {
-    .id = LIMINE_FRAMEBUFFER_REQUEST,
-    .revision = 0
-};
-
-struct limine_framebuffer *frame_buffer = NULL;
-
-static char *glyph_data = NULL;
-static PSF1_Header *font_header = NULL;
-
-static uint8_t glyph_padding = 1;
 static uint32_t glyph_width = 0;
 static uint32_t glyph_height = 0;
 static uint32_t max_rows = 0;
@@ -83,15 +61,7 @@ static uint32_t viewport_width = 0;
 static uint32_t viewport_height = 0;
 
 /*
- * Calculates the framebuffer index for a pixel.
- */
-static inline uint64_t fbindex(uint32_t x, uint32_t y)
-{
-    return ((uint64_t)y * (frame_buffer->pitch / 4)) + x;
-}
-
-/*
- * Writes a pixel to the framebuffer.
+ * Draws a pixel relative to the terminal viewport.
  */
 static inline void _put_pixel(uint32_t x, uint32_t y, uint32_t color)
 {
@@ -99,44 +69,7 @@ static inline void _put_pixel(uint32_t x, uint32_t y, uint32_t color)
         return;
     }
 
-    uint32_t *fb = frame_buffer->address;
-    fb[fbindex(viewport_x + x, viewport_y + y)] = color;
-}
-
-/*
- * Loads the PSF font supplied by the bootloader.
- */
-static void _load_font(void)
-{
-    if (file_request.response != NULL) {
-        for (uint64_t i = 0; i < file_request.response->module_count; i++) {
-            struct limine_file *module = file_request.response->modules[i];
-
-            if (strcmp(module->path, "/Font.psf") != 0) {
-                continue;
-            }
-
-            if (module->size < sizeof(PSF1_Header)) {
-                break;
-            }
-
-            font_header = (PSF1_Header *)module->address;
-
-            if (font_header->magic != 0x0436 || font_header->char_height == 0) {
-                break;
-            }
-
-            if (module->size < sizeof(PSF1_Header) + (256ULL * font_header->char_height)) {
-                break;
-            }
-
-            glyph_data = (char *)font_header + sizeof(PSF1_Header);
-            return;
-        }
-    }
-
-    kprintf("FATAL: Failed to load font.\n");
-    hcf();
+    gfx_put_pixel(viewport_x + x, viewport_y + y, color);
 }
 
 /*
@@ -144,41 +77,23 @@ static void _load_font(void)
  */
 static void _render_glyph(char ch, uint32_t x, uint32_t y, uint32_t foreground, uint32_t background)
 {
-    uint32_t data_index = (uint8_t)ch * font_header->char_height;
-
-    for (uint32_t row = 0; row < glyph_height; row++) {
-        uint8_t row_data = 0;
-
-        if (row < font_header->char_height) {
-            row_data = glyph_data[data_index++];
-        }
-
-        for (uint32_t col = 0; col < glyph_width; col++) {
-            uint32_t color = background;
-
-            if (col > 0 && col <= 8 && (row_data & (1 << (8 - col)))) {
-                color = foreground;
-            }
-
-            _put_pixel(x + col, y + row, color);
-        }
+    if (x >= viewport_width || y >= viewport_height) {
+        return;
     }
+
+    if (glyph_width > viewport_width - x || glyph_height > viewport_height - y) {
+        return;
+    }
+
+    gfx_draw_glyph(ch, viewport_x + x, viewport_y + y, foreground, background);
 }
 
 /*
- * Clears the framebuffer without modifying the terminal history.
+ * Clears the terminal viewport without modifying the terminal history.
  */
 static void _clear_render_area(void)
 {
-    uint32_t *fb = frame_buffer->address;
-
-    for (uint32_t y = 0; y < viewport_height; y++) {
-        uint32_t *row = &fb[fbindex(viewport_x, viewport_y + y)];
-
-        for (uint32_t x = 0; x < viewport_width; x++) {
-            row[x] = bgcolor;
-        }
-    }
+    gfx_fill_rect(viewport_x, viewport_y, viewport_width, viewport_height, bgcolor);
 }
 
 /*
@@ -354,11 +269,11 @@ void term_set_viewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height)
         return;
     }
 
-    if (x >= frame_buffer->width || y >= frame_buffer->height) {
+    if (x >= gfx_get_width() || y >= gfx_get_height()) {
         return;
     }
 
-    if (width > frame_buffer->width - x || height > frame_buffer->height - y) {
+    if (width > gfx_get_width() - x || height > gfx_get_height() - y) {
         return;
     }
 
@@ -419,31 +334,22 @@ void term_set_visible(bool visible)
 }
 
 /*
- * Initialises the terminal buffer, framebuffer and font.
+ * Initialises the terminal buffer and viewport using the initialised GFX subsystem.
  */
 void term_init(void)
 {
     terminal_buffer_init(&terminal_buffer);
 
-    frame_buffer = framebuffer_request.response->framebuffers[0];
-
-    _load_font();
-
-    glyph_width = 8 + glyph_padding;
-    glyph_height = font_header->char_height + glyph_padding;
+    glyph_width = gfx_get_glyph_width();
+    glyph_height = gfx_get_glyph_height();
 
     viewport_x = 0;
     viewport_y = 0;
-    viewport_width = frame_buffer->width;
-    viewport_height = frame_buffer->height;
+    viewport_width = gfx_get_width();
+    viewport_height = gfx_get_height();
 
     max_rows = viewport_height / glyph_height;
     max_cols = viewport_width / glyph_width;
-
-    kprintf("Font: %dx%d\n", glyph_width - glyph_padding, glyph_height - glyph_padding);
-    kprintf("Resolution: %dx%d\n", frame_buffer->width, frame_buffer->height);
-    kprintf("BPP: %d\n", frame_buffer->bpp);
-    kprintf("Pitch: %d\n", frame_buffer->pitch);
 
     is_ready = true;
 }

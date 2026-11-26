@@ -15,10 +15,24 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
-#ifndef _BLOREOS_DESKTOP_H
-#define _BLOREOS_DESKTOP_H
+#ifndef _BLOREOS_GFX_H
+#define _BLOREOS_GFX_H
 
-void desktop_init(void);
-void desktop_show(void);
+#include <stdint.h>
+
+void gfx_init(void);
+
+uint32_t gfx_get_width(void);
+uint32_t gfx_get_height(void);
+uint32_t gfx_get_glyph_width(void);
+uint32_t gfx_get_glyph_height(void);
+
+void gfx_put_pixel(uint32_t x, uint32_t y, uint32_t color);
+void gfx_clear(uint32_t color);
+void gfx_fill_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t color);
+void gfx_draw_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t color);
+
+void gfx_draw_glyph(char ch, uint32_t x, uint32_t y, uint32_t foreground, uint32_t background);
+void gfx_draw_text(uint32_t x, uint32_t y, const char *text, uint32_t foreground, uint32_t background);
 
 #endif

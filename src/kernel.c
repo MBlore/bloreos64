@@ -54,7 +54,8 @@
 #include <kthread.h>
 #include <thread.h>
 #include <scheduler.h>
-#include <desktop.h>
+#include <desktop/desktop.h>
+#include <gfx/gfx.h>
 
 #include "tests/tests.h"
 
@@ -183,8 +184,10 @@ void kernel_main(void)
     }
 
     init_serial(PORT_COM1);
+    gfx_init();
     term_init();
     desktop_init();
+    splash_show();
 
     term_fgcolor(0x00FF00);
     klogf("BloreOS Alpha v0.01\n\n");
@@ -265,9 +268,9 @@ void kernel_main(void)
     
     klogf("System ready. Type 'help' for commands.\n\n");
 
-    term_set_viewport(50, 50, 800, 500);
-    term_set_visible(true);
+    desktop_show();
     term_show_prompt();
+    term_set_visible(true);
    
     // Process pending events or idle until an interrupt occurs.
     while(1) {
